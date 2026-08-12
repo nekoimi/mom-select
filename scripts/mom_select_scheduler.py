@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,34 +23,37 @@ from mom_select.config import (
     DEFAULT_REPORT_DIR,
     DEFAULT_STATE_FILE,
 )
+from mom_select.notifications import build_notifiers, notify_all
+from mom_select.settings import AppSettings, load_settings
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 LOG = logging.getLogger("mom-select-scheduler")
 
 
-def build_run_args(args: argparse.Namespace) -> SimpleNamespace:
+def build_run_args(settings: AppSettings) -> SimpleNamespace:
     """Build the Namespace expected by ``mom_select.cli.run``."""
     return SimpleNamespace(
         date=date.today(),
         mode="intraday",
-        portfolio=Path(args.portfolio) if args.portfolio else None,
-        pool=Path(args.pool) if args.pool else DEFAULT_POOL_FILE,
-        cache_dir=Path(args.cache_dir) if args.cache_dir else DEFAULT_CACHE_DIR,
-        report_dir=Path(args.report_dir) if args.report_dir else DEFAULT_REPORT_DIR,
-        state_file=Path(args.state_file) if args.state_file else DEFAULT_STATE_FILE,
+        portfolio=settings.portfolio,
+        pool=settings.pool or DEFAULT_POOL_FILE,
+        cache_dir=settings.cache_dir or DEFAULT_CACHE_DIR,
+        report_dir=settings.report_dir or DEFAULT_REPORT_DIR,
+        state_file=settings.state_file or DEFAULT_STATE_FILE,
         offline=False,
-        fixed_pool_only=args.fixed_pool_only,
+        fixed_pool_only=settings.fixed_pool_only,
+        strategy_config=settings.strategy,
         debug=False,
-        workers=args.workers,
+        workers=settings.workers,
         allow_incomplete_day=False,
         no_save_state=True,
     )
 
 
-def run_scheduled(args: argparse.Namespace) -> None:
+def run_scheduled(settings: AppSettings) -> None:
     """Generate today's intraday report directly in this process."""
-    run_args = build_run_args(args)
+    run_args = build_run_args(settings)
     LOG.info("开始执行ETF建议：%s", run_args.date.isoformat())
     try:
         paths = run(run_args)
@@ -59,24 +61,31 @@ def run_scheduled(args: argparse.Namespace) -> None:
         LOG.exception("ETF建议执行失败")
         return
     LOG.info("报告生成完成：%s", paths.html)
+    for notifier in build_notifiers(settings.notification):
+        try:
+            notify_all([notifier], paths.image, f"ETF动量策略日报 {run_args.date.isoformat()}", f"报告：{paths.html}")
+            LOG.info("通知发送完成：%s", type(notifier).__name__)
+        except Exception:
+            LOG.exception("通知发送失败：%s", type(notifier).__name__)
 
 
-def create_scheduler(args: argparse.Namespace) -> BlockingScheduler:
-    scheduler = BlockingScheduler(timezone=SHANGHAI)
+def create_scheduler(settings: AppSettings) -> BlockingScheduler:
+    timezone = ZoneInfo(settings.schedule.timezone)
+    scheduler = BlockingScheduler(timezone=timezone)
     scheduler.add_job(
         run_scheduled,
         trigger=CronTrigger(
-            day_of_week="mon-fri",
-            hour=13,
-            minute=5,
-            timezone=SHANGHAI,
+            day_of_week=settings.schedule.day_of_week,
+            hour=settings.schedule.hour,
+            minute=settings.schedule.minute,
+            timezone=timezone,
         ),
-        args=[args],
+        args=[settings],
         id="daily-etf-advice",
         name="工作日13:05生成ETF建议",
         max_instances=1,
         coalesce=True,
-        misfire_grace_time=300,
+        misfire_grace_time=settings.schedule.misfire_grace_time,
         replace_existing=True,
     )
     return scheduler
@@ -84,14 +93,7 @@ def create_scheduler(args: argparse.Namespace) -> BlockingScheduler:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="使用APScheduler定时生成13:05 ETF建议")
-    parser.add_argument("--project-dir", default=os.getcwd(), help="兼容Supervisor配置，任务在进程内执行")
-    parser.add_argument("--portfolio")
-    parser.add_argument("--pool")
-    parser.add_argument("--cache-dir")
-    parser.add_argument("--report-dir")
-    parser.add_argument("--state-file")
-    parser.add_argument("--fixed-pool-only", action="store_true")
-    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--config", default="config/config.yaml")
     parser.add_argument("--run-once", action="store_true", help="立即调用一次任务后退出")
     args = parser.parse_args()
 
@@ -99,11 +101,12 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    settings = load_settings(Path(args.config))
     if args.run_once:
-        run_scheduled(args)
+        run_scheduled(settings)
         return
 
-    scheduler = create_scheduler(args)
+    scheduler = create_scheduler(settings)
     LOG.info("已启动APScheduler：工作日13:05（Asia/Shanghai）")
     try:
         scheduler.start()

@@ -1,4 +1,3 @@
-from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
 
@@ -9,30 +8,18 @@ from scripts.mom_select_scheduler import (
     build_run_args,
     create_scheduler,
 )
-
-
-def scheduler_args() -> Namespace:
-    return Namespace(
-        project_dir="/opt/mom-select",
-        portfolio="/opt/mom-select/config/portfolio.csv",
-        pool=None,
-        cache_dir=None,
-        report_dir=None,
-        state_file=None,
-        fixed_pool_only=False,
-        workers=8,
-    )
+from mom_select.settings import AppSettings, ScheduleSettings
 
 
 def test_build_run_args_targets_intraday_mode():
-    args = build_run_args(scheduler_args())
+    args = build_run_args(AppSettings(portfolio=Path("/opt/mom-select/config/portfolio.csv")))
     assert args.mode == "intraday"
     assert args.no_save_state is True
     assert args.portfolio == Path("/opt/mom-select/config/portfolio.csv")
 
 
 def test_scheduler_has_weekday_1305_trigger():
-    scheduler = create_scheduler(scheduler_args())
+    scheduler = create_scheduler(AppSettings(schedule=ScheduleSettings()))
     job = scheduler.get_job("daily-etf-advice")
     assert job is not None
     assert isinstance(job.trigger, CronTrigger)

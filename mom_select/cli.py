@@ -28,6 +28,7 @@ from mom_select.universe import (
     dynamic_universe_candidates,
     load_etf_pool,
 )
+from mom_select.settings import load_settings
 
 
 def _parse_date(value: str) -> date:
@@ -65,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="生成本地ETF动量轮动建议，不执行交易",
     )
     parser.add_argument("--date", type=_parse_date, default=date.today(), help="行情截止日期")
+    parser.add_argument("--config", type=Path, help="YAML配置文件；用于生产调度和统一路径/通知配置")
     parser.add_argument(
         "--mode",
         choices=("close", "intraday"),
@@ -102,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace):
-    config = DEFAULT_STRATEGY_CONFIG
+    config = getattr(args, "strategy_config", DEFAULT_STRATEGY_CONFIG)
     pool = load_etf_pool(args.pool)
     holdings = load_holdings(args.portfolio)
     provider = EastmoneyDataProvider(args.cache_dir, offline=args.offline, workers=args.workers)
@@ -413,6 +415,16 @@ def run(args: argparse.Namespace):
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    if args.config:
+        settings = load_settings(args.config)
+        args.pool = settings.pool or args.pool
+        args.portfolio = settings.portfolio or args.portfolio
+        args.cache_dir = settings.cache_dir or args.cache_dir
+        args.report_dir = settings.report_dir or args.report_dir
+        args.state_file = settings.state_file or args.state_file
+        args.workers = settings.workers
+        args.fixed_pool_only = settings.fixed_pool_only
+        args.strategy_config = settings.strategy
     try:
         paths = run(args)
     except Exception as exc:

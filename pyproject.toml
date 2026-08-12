@@ -9,6 +9,8 @@ dependencies = [
     "pandas>=2.2",
     "playwright>=1.50",
     "apscheduler>=3.10,<4",
+    "pyyaml>=6.0",
+    "requests[socks]>=2.32",
 ]
 
 [project.scripts]

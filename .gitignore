@@ -5,6 +5,7 @@ __pycache__/
 data/cache/
 data/cache-*/
 data/market_state.json
+.playwright/
 reports/*.md
 reports/*.json
 reports/*.html

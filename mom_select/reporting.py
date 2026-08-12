@@ -392,22 +392,37 @@ def render_html_to_png(html_path: Path, image_path: Path) -> None:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
         raise RuntimeError("缺少Playwright，运行 uv sync 后重试") from exc
-    browser_path = _find_browser()
-    if browser_path is None:
-        raise RuntimeError("未找到Chrome或Edge，无法生成PNG报告")
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            executable_path=str(browser_path),
-            headless=True,
-            args=["--font-render-hinting=none"],
-        )
-        page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1.5)
-        page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
-        # Capture the report element itself rather than the wider browser
-        # viewport, otherwise the canvas background becomes visible as side
-        # margins in the exported image.
-        page.locator(".report").screenshot(path=str(image_path))
-        browser.close()
+        browser_path = _find_browser()
+        launch_options = {
+            "headless": True,
+            "args": ["--font-render-hinting=none"],
+        }
+        if browser_path is not None:
+            launch_options["executable_path"] = str(browser_path)
+        try:
+            # With no system browser, Playwright uses its downloaded Chromium.
+            # This is the normal Linux server path after `playwright install`.
+            browser = playwright.chromium.launch(**launch_options)
+        except Exception as exc:
+            if browser_path is None:
+                raise RuntimeError(
+                    "未找到系统Chrome，且Playwright Chromium不可用；"
+                    "请执行 `uv run playwright install --with-deps chromium`"
+                ) from exc
+            raise RuntimeError(f"启动浏览器失败：{exc}") from exc
+        try:
+            page = browser.new_page(
+                viewport={"width": 1280, "height": 900},
+                device_scale_factor=1.5,
+            )
+            page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+            # Capture the report element itself rather than the wider browser
+            # viewport, otherwise the canvas background becomes visible as side
+            # margins in the exported image.
+            page.locator(".report").screenshot(path=str(image_path))
+        finally:
+            browser.close()
 
 
 def write_reports(report: AdviceReport, report_dir: Path) -> ReportPaths:

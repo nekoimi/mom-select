@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+*.py[cod]
+data/cache
+reports
+config/portfolio.csv
+config/config.yaml
+original.py
+tests

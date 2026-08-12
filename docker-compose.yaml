@@ -1,0 +1,31 @@
+services:
+  mom-select:
+    image: ghcr.io/${GHCR_OWNER:-your-org}/mom-select:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mom-select
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config/portfolio.csv:/app/config/portfolio.csv:ro
+      - etf_cache:/app/data/cache
+      - etf_reports:/app/reports
+      - etf_state:/app/data/state
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import mom_select, yaml, playwright, apscheduler, requests"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  etf_cache:
+  etf_reports:
+  etf_state:

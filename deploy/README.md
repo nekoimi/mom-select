@@ -9,10 +9,14 @@ cd /opt
 git clone <repository-url> mom-select
 cd mom-select
 uv sync --no-dev
+PLAYWRIGHT_BROWSERS_PATH=/opt/mom-select/.playwright \
+  uv run playwright install --with-deps chromium
 cp config/portfolio.example.csv config/portfolio.csv
 ```
 
 `config/portfolio.csv` 是人工维护的持仓文件，不要把真实账户凭据放入项目。
+
+服务器不需要预装 Chrome。上面的命令会下载 Playwright 自带的无头 Chromium，并在 Ubuntu/Debian 上安装所需系统运行库。若当前用户没有安装系统依赖的权限，请先使用 `sudo` 执行依赖安装，或联系管理员安装 `libnss3`、`libatk-bridge2.0-0`、`libgtk-3-0` 等 Chromium 运行库。
 
 安装 Supervisor（以 Debian/Ubuntu 为例）：
 
@@ -35,9 +39,8 @@ sudo supervisorctl status mom-select-scheduler
 先用调度器的单次模式检查路径、权限和数据源：
 
 ```bash
-.venv/bin/python scripts/mom_select_scheduler.py \
-  --project-dir /opt/mom-select \
-  --portfolio /opt/mom-select/config/portfolio.csv \
+.venv/bin/python -m scripts.mom_select_scheduler \
+  --config /opt/mom-select/config/config.yaml \
   --run-once
 ```
 
@@ -51,6 +54,10 @@ tail -f /var/log/mom-select-scheduler-error.log
 ```
 
 报告默认写入 `/opt/mom-select/reports/`。运行时间、缓存目录和池文件均可在 Supervisor 的 `command` 行中通过参数调整。
+
+PNG 生成优先使用系统 Chrome/Edge；服务器没有系统浏览器时自动使用上述 Playwright Chromium。Supervisor 配置中的 `PLAYWRIGHT_BROWSERS_PATH` 必须与安装浏览器时使用的目录一致，并确保 `ubuntu` 用户对该目录有读取和执行权限。
+
+如果不想维护宿主机浏览器，推荐直接使用项目根目录的 Docker Compose 配置；它把 Chromium 和中文字体封装在镜像中，详见根目录 `docker-compose.yaml`。
 
 ## 手工补跑
 

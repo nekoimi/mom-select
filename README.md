@@ -13,6 +13,7 @@
 - 当前持仓处于第一名90%得分范围内时优先保留。
 - 无风险ETF通过时输出货币ETF `511880.XSHG` 作为防御目标。
 - 输出Markdown、JSON、设计后的HTML长图报告及对应PNG图片。
+- PNG 使用 Playwright 渲染；Linux 服务器无需安装桌面浏览器，安装 Playwright 自带的 Chromium 即可。
 - ETF行情缓存为CSV，支持断网后使用 `--offline` 复现。
 
 动态池复现 `original.py` 的名称清洗和前两个字符分组规则，因此也保留原规则可能误分行业的局限。固定池维护在 `config/etf_pool.csv`。
@@ -26,6 +27,8 @@ uv sync --dev
 Linux 长期运行可使用 Supervisor 托管内置调度器，详见 [`deploy/README.md`](deploy/README.md)。调度器按上海时区在工作日 13:05 调用一次 CLI，不需要额外配置 cron。
 
 ## 运行
+
+生产部署推荐使用 Docker Compose：复制 `config/config.example.yaml` 为 `config/config.yaml`，复制 `.env.example` 为 `.env`，填写通知密钥后执行 `docker compose up -d`。镜像内已包含 Playwright Chromium、Linux 运行库和 `Noto Sans CJK` 中文字体，宿主机不需要安装浏览器。
 
 交易日13:05-13:10生成盘中建议（默认模式）：
 

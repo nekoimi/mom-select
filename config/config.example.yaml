@@ -1,0 +1,55 @@
+runtime:
+  project_dir: .
+  workers: 8
+  fixed_pool_only: false
+
+schedule:
+  timezone: Asia/Shanghai
+  day_of_week: mon-fri
+  hour: 13
+  minute: 5
+  misfire_grace_time: 300
+
+strategy:
+  lookback_days: 25
+  min_score: 0.0
+  max_score: 5.0
+  r2_threshold: 0.4
+  ma_lookback: 10
+  volume_lookback: 5
+  volume_threshold: 1.8
+  daily_loss_floor: 0.97
+  liquidity_lookback: 3
+  min_average_turnover: 10000000
+  holdings_num: 1
+  retention_ratio: 0.9
+  defensive_etf: 511880.XSHG
+  minimum_data_coverage: 0.8
+
+paths:
+  pool: config/etf_pool.csv
+  portfolio: config/portfolio.csv
+  cache_dir: data/cache
+  report_dir: reports
+  state_file: data/state/market_state.json
+
+notifications:
+  enabled: false
+  channels:
+    - type: wechat
+      name: default
+      webhook: ${WECHAT_WEBHOOK}
+    - type: telegram
+      name: default
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+      chat_id: ${TELEGRAM_CHAT_ID}
+      proxy: ${TELEGRAM_PROXY}
+    - type: email
+      name: default
+      host: smtp.example.com
+      port: 465
+      username: ${SMTP_USERNAME}
+      password: ${SMTP_PASSWORD}
+      from: ${SMTP_FROM}
+      to: [you@example.com]
+      use_ssl: true
