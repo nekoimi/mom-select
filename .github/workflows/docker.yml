@@ -1,16 +1,26 @@
 name: Docker
 
 on:
-  push:
-    branches: [main, master]
-    tags: ["v*.*.*"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
 jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查依赖变更
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +33,7 @@ jobs:
 
   image:
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
