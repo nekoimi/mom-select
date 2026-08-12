@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+data/cache/
+data/cache-*/
+data/market_state.json
+reports/*.md
+reports/*.json

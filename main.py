@@ -1,5 +1,4 @@
-def main():
-    print("Hello from mom-select!")
+from mom_select.cli import main
 
 
 if __name__ == "__main__":
