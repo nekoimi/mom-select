@@ -10,12 +10,12 @@ import pandas as pd
 
 from mom_select.models import (
     AdviceReport,
-    DualPeriodRanking,
     EtfMetrics,
     Holding,
     IndexSignal,
     MarketAssessment,
     Regime,
+    RunMode,
     StrategyConfig,
 )
 
@@ -103,8 +103,9 @@ def calculate_momentum(prices: np.ndarray, lookback_days: int) -> tuple[float, f
     intercept = y_mean - slope * x_mean
     annualized_return = math.exp(slope * 250) - 1
     predicted = slope * x_values + intercept
-    residual = np.sum(weights * (y_values - predicted) ** 2)
-    total = np.sum(weights * (y_values - y_mean) ** 2)
+    base_weights = np.sqrt(weights)
+    residual = np.sum(base_weights * (y_values - predicted) ** 2)
+    total = np.sum(base_weights * (y_values - np.mean(y_values)) ** 2)
     r_squared = 1 - residual / total if total else 0.0
     return annualized_return * r_squared, annualized_return, r_squared
 
@@ -115,10 +116,10 @@ def calculate_metrics(
     frame: pd.DataFrame,
     regime: Regime,
     config: StrategyConfig,
+    intraday_volume_multiplier: float = 1.0,
 ) -> EtfMetrics:
     required_rows = max(
         config.lookback_days + 1,
-        config.timing_lookback_days + 1,
         config.ma_lookback,
         config.volume_lookback + 1,
         config.liquidity_lookback,
@@ -129,14 +130,16 @@ def calculate_metrics(
         raise ValueError(f"仅有{len(clean)}行有效数据，至少需要{required_rows}行")
     closes = clean["close"].to_numpy(dtype=float)
     score, annualized_return, r_squared = calculate_momentum(closes, config.lookback_days)
-    timing_score, timing_annualized_return, timing_r_squared = calculate_momentum(
-        closes, config.timing_lookback_days
-    )
     close = float(closes[-1])
     moving_average = float(np.mean(closes[-config.ma_lookback :]))
     prior_volumes = clean["volume"].to_numpy(dtype=float)[-(config.volume_lookback + 1) : -1]
-    volume_ratio = float(clean["volume"].iloc[-1] / np.mean(prior_volumes))
-    average_turnover = float(clean["turnover"].iloc[-config.liquidity_lookback :].mean())
+    projected_volume = float(clean["volume"].iloc[-1]) * intraday_volume_multiplier
+    volume_ratio = float(projected_volume / np.mean(prior_volumes))
+    if intraday_volume_multiplier > 1:
+        turnover_window = clean["turnover"].iloc[-(config.liquidity_lookback + 1) : -1]
+    else:
+        turnover_window = clean["turnover"].iloc[-config.liquidity_lookback :]
+    average_turnover = float(turnover_window.mean())
     daily_ratios = closes[-3:] / closes[-4:-1]
     regime_filter = r_squared > config.r2_threshold if regime == "normal" else close > moving_average
     return EtfMetrics(
@@ -154,47 +157,7 @@ def calculate_metrics(
         passed_volume=volume_ratio < config.volume_threshold,
         passed_loss=bool(np.min(daily_ratios) >= config.daily_loss_floor),
         passed_liquidity=average_turnover >= config.min_average_turnover,
-        timing_momentum_score=timing_score,
-        timing_annualized_return=timing_annualized_return,
-        timing_r_squared=timing_r_squared,
     )
-
-
-def build_dual_period_rankings(
-    eligible: list[EtfMetrics], config: StrategyConfig
-) -> list[DualPeriodRanking]:
-    """Rank 25-day-confirmed ETFs with a 10-day timing overlay."""
-    if not eligible:
-        return []
-    trend_scores = pd.Series(
-        {item.code: item.momentum_score for item in eligible}, dtype=float
-    )
-    timing_scores = pd.Series(
-        {item.code: item.timing_momentum_score for item in eligible}, dtype=float
-    )
-    trend_percentiles = trend_scores.rank(method="average", pct=True)
-    timing_percentiles = timing_scores.rank(method="average", pct=True)
-    by_code = {item.code: item for item in eligible}
-    rankings = []
-    for code, item in by_code.items():
-        trend_percentile = float(trend_percentiles[code])
-        timing_percentile = float(timing_percentiles[code])
-        rankings.append(
-            DualPeriodRanking(
-                code=code,
-                name=item.name,
-                trend_momentum_score=item.momentum_score,
-                timing_momentum_score=item.timing_momentum_score,
-                trend_percentile=trend_percentile,
-                timing_percentile=timing_percentile,
-                combined_score=(
-                    config.trend_weight * trend_percentile
-                    + config.timing_weight * timing_percentile
-                ),
-            )
-        )
-    rankings.sort(key=lambda item: item.combined_score, reverse=True)
-    return rankings
 
 
 def choose_targets(
@@ -235,16 +198,28 @@ def build_report(
     holdings: list[Holding],
     config: StrategyConfig,
     provider_warnings: list[str] | None = None,
+    run_mode: RunMode = "close",
+    signal_time: str | None = None,
+    debug: bool = False,
+    historical_simulation: bool = False,
+    discovered_pool_size: int = 0,
+    fixed_pool_size: int = 0,
+    dynamic_pool_size: int = 0,
 ) -> AdviceReport:
     rankings.sort(key=lambda item: item.momentum_score, reverse=True)
     eligible = [item for item in rankings if item.passed_all]
-    dual_period_rankings = build_dual_period_rankings(eligible, config)
     candidates, targets = choose_targets(eligible, holdings, market.regime, config)
     current_codes = [holding.code for holding in holdings if holding.amount > 0]
     coverage = len(rankings) / pool_size if pool_size else 0
     warnings: list[str] = list(provider_warnings or [])
-    actionable = coverage >= config.minimum_data_coverage
-    if not actionable:
+    if historical_simulation:
+        warnings.append("历史DEBUG为重建信号，仅用于策略对照，不作为实盘信号")
+    elif run_mode == "intraday":
+        warnings.append("13:05信号基于盘中快照，收盘前价格和排名仍可能变化")
+    if debug:
+        warnings.append("DEBUG模式：策略时钟固定为13:05，结果仅用于本地调试，不可作为实盘信号")
+    data_actionable = coverage >= config.minimum_data_coverage
+    if not data_actionable:
         warnings.append(
             f"数据覆盖率仅{coverage:.1%}，低于{config.minimum_data_coverage:.0%}，本次结果不可执行"
         )
@@ -252,7 +227,7 @@ def build_report(
         warnings.append(f"{len(failures)}只ETF数据获取或计算失败")
     if not eligible:
         warnings.append("没有风险ETF通过全部过滤，策略目标为防御ETF")
-    if not actionable:
+    if not data_actionable:
         action = "等待"
         explanation = "关键数据覆盖不足，请修复数据后重新运行"
         targets = []
@@ -265,6 +240,10 @@ def build_report(
     else:
         action = "换仓"
         explanation = "当前持仓不在最终目标中；先确认卖出成交，再考虑买入目标"
+    actionable = data_actionable and not debug
+    if debug:
+        action = f"调试：{action}"
+        explanation = f"仅用于本地流程检查；{explanation}"
     return AdviceReport(
         generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         as_of=as_of,
@@ -275,12 +254,17 @@ def build_report(
         rankings=rankings,
         eligible=eligible[:10],
         candidates=candidates,
-        dual_period_rankings=dual_period_rankings[:10],
-        dual_period_target=(dual_period_rankings[0].code if dual_period_rankings else None),
         current_holdings=holdings,
         targets=targets,
         action=action,
         explanation=explanation,
+        discovered_pool_size=discovered_pool_size,
+        fixed_pool_size=fixed_pool_size,
+        dynamic_pool_size=dynamic_pool_size,
+        run_mode=run_mode,
+        signal_time=signal_time,
+        debug=debug,
+        historical_simulation=historical_simulation,
         warnings=warnings,
         actionable=actionable,
     )

@@ -6,7 +6,7 @@ import pandas as pd
 from mom_select.models import EtfMetrics, Holding, StrategyConfig
 from mom_select.strategy import (
     assess_market,
-    build_dual_period_rankings,
+    calculate_momentum,
     calculate_metrics,
     choose_targets,
 )
@@ -28,7 +28,7 @@ def history(values: np.ndarray, volume: float = 1_000_000) -> pd.DataFrame:
     )
 
 
-def metric(code: str, score: float, timing_score: float = 0.0) -> EtfMetrics:
+def metric(code: str, score: float) -> EtfMetrics:
     return EtfMetrics(
         code=code,
         name=code,
@@ -44,7 +44,6 @@ def metric(code: str, score: float, timing_score: float = 0.0) -> EtfMetrics:
         passed_volume=True,
         passed_loss=True,
         passed_liquidity=True,
-        timing_momentum_score=timing_score,
     )
 
 
@@ -85,6 +84,25 @@ def test_metrics_accept_smooth_uptrend() -> None:
     assert result.passed_all
 
 
+def test_intraday_metrics_project_volume_but_use_completed_turnover_days() -> None:
+    prices = 10 * np.exp(np.linspace(0, 0.06, 40))
+    frame = history(prices)
+    frame.loc[frame.index[-1], "volume"] = 500_000
+    frame.loc[frame.index[-1], "turnover"] = 5_000_000
+
+    result = calculate_metrics(
+        "510300.XSHG",
+        "300ETF",
+        frame,
+        "normal",
+        StrategyConfig(),
+        intraday_volume_multiplier=1.2,
+    )
+
+    assert result.volume_ratio == 0.6
+    assert result.average_turnover > 10_000_000
+
+
 def test_current_holding_is_retained_inside_ninety_percent_band() -> None:
     config = StrategyConfig()
     eligible = [metric("leader", 1.0), metric("holding", 0.95), metric("other", 0.8)]
@@ -104,14 +122,24 @@ def test_empty_selection_uses_defensive_etf() -> None:
     assert targets == ["511880.XSHG"]
 
 
-def test_dual_period_ranking_uses_seventy_thirty_percentiles() -> None:
-    eligible = [
-        metric("trend", 3.0, 1.0),
-        metric("balanced", 2.0, 3.0),
-        metric("timing", 1.0, 2.0),
-    ]
+def test_momentum_matches_original_joinquant_weighting() -> None:
+    prices = 10 * np.exp(np.linspace(0, 0.08, 26) + np.sin(np.arange(26)) * 0.01)
+    score, annualized, r_squared = calculate_momentum(prices, 25)
+    y_values = np.log(prices)
+    x_values = np.arange(len(y_values))
+    base_weights = np.linspace(1, 2, len(y_values))
+    regression_weights = base_weights**2
+    x_mean = np.sum(regression_weights * x_values) / np.sum(regression_weights)
+    y_mean = np.sum(regression_weights * y_values) / np.sum(regression_weights)
+    slope = np.sum(
+        regression_weights * (x_values - x_mean) * (y_values - y_mean)
+    ) / np.sum(regression_weights * (x_values - x_mean) ** 2)
+    predicted = slope * x_values + (y_mean - slope * x_mean)
+    expected_annualized = np.exp(slope * 250) - 1
+    expected_r_squared = 1 - np.sum(base_weights * (y_values - predicted) ** 2) / np.sum(
+        base_weights * (y_values - np.mean(y_values)) ** 2
+    )
 
-    result = build_dual_period_rankings(eligible, StrategyConfig())
-
-    assert [item.code for item in result] == ["trend", "balanced", "timing"]
-    assert result[0].combined_score == 0.7 * 1.0 + 0.3 * (1 / 3)
+    assert annualized == expected_annualized
+    assert r_squared == expected_r_squared
+    assert score == expected_annualized * expected_r_squared

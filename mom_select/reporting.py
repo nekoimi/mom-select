@@ -34,20 +34,42 @@ def _metric_reasons(metric: EtfMetrics) -> str:
 
 def render_markdown(report: AdviceReport) -> str:
     regime = "走弱期" if report.market.regime == "weak" else "正常期"
+    mode_name = (
+        "13:05历史模拟"
+        if report.historical_simulation
+        else "13:05盘中信号"
+        if report.run_mode == "intraday"
+        else "收盘复盘"
+    )
+    if report.debug:
+        mode_name += "（DEBUG）"
+    if report.historical_simulation:
+        data_note = (
+            f"本报告重建{report.as_of.isoformat()} 13:05历史信号，"
+            "分钟行情缺失时可能使用日K降级。"
+        )
+    elif report.run_mode == "intraday":
+        data_note = (
+            f"本报告使用13:05实时快照（{report.signal_time or '时间未知'}）生成，"
+            "供当日盘中人工复核。"
+        )
+    else:
+        data_note = "本报告由收盘日线生成，仅供下一交易日人工复核。"
     lines = [
-        f"# ETF轮动建议｜{report.as_of.isoformat()}",
+        f"# ETF轮动建议｜{report.as_of.isoformat()}｜{mode_name}",
         "",
-        "> 本报告由收盘日线生成，仅供下一交易日人工复核，不构成投资建议，也不会自动下单。",
+        f"> {data_note}不构成投资建议，也不会自动下单。",
         "",
         "## 结论",
         "",
-        f"- 是否可执行：{'是' if report.actionable else '否'}",
+        f"- 是否可执行：{'否（DEBUG）' if report.debug else ('是' if report.actionable else '否')}",
         f"- 市场状态：{regime}",
         f"- 操作建议：{report.action}",
         f"- 策略目标：{', '.join(report.targets) if report.targets else '无'}",
-        f"- 双周期辅助推荐：{report.dual_period_target or '无'}",
         f"- 说明：{report.explanation}",
         f"- 数据覆盖：{report.analyzed_count}/{report.pool_size}",
+        f"- ETF池：发现 {report.discovered_pool_size} 只，固定 {report.fixed_pool_size} 只，动态 {report.dynamic_pool_size} 只",
+        f"- 信号时间：{report.signal_time or '收盘日线'}",
     ]
     if report.warnings:
         lines.extend(["", "## 风险提示", ""])
@@ -80,23 +102,6 @@ def render_markdown(report: AdviceReport) -> str:
             )
     else:
         lines.append("无。")
-    lines.extend(["", "## 25日趋势 + 10日择时推荐", ""])
-    lines.append(
-        "该榜单不改变正式策略目标：仅在已通过25日趋势和全部风险过滤的ETF中，"
-        "按25日动量百分位70%与10日动量百分位30%合成排名。"
-    )
-    lines.append("")
-    if report.dual_period_rankings:
-        lines.append("| 排名 | ETF | 25日动量 | 10日动量 | 25日百分位 | 10日百分位 | 综合分 |")
-        lines.append("|---:|---|---:|---:|---:|---:|---:|")
-        for index, item in enumerate(report.dual_period_rankings, start=1):
-            lines.append(
-                f"| {index} | {item.name}（{item.code}） | {item.trend_momentum_score:.4f} | "
-                f"{item.timing_momentum_score:.4f} | {item.trend_percentile:.1%} | "
-                f"{item.timing_percentile:.1%} | {item.combined_score:.4f} |"
-            )
-    else:
-        lines.append("无已通过25日趋势确认和全部风险过滤的ETF。")
     lines.extend(["", "## 动量排名前20", ""])
     lines.append("| 排名 | ETF | 动量分 | 全部通过 | 检查结果 |")
     lines.append("|---:|---|---:|---|---|")
@@ -144,7 +149,49 @@ def render_html(report: AdviceReport) -> str:
     regime_name = "走弱期" if report.market.regime == "weak" else "正常期"
     regime_class = "weak" if report.market.regime == "weak" else "normal"
     target = ", ".join(report.targets) if report.targets else "无"
-    dual_target = report.dual_period_target or "无"
+    target_names = {
+        item.code: item.name
+        for item in [*report.rankings, *report.eligible, *report.candidates]
+    }
+    target_names.update(
+        {item.code: item.name for item in report.current_holdings if item.name}
+    )
+    target_summary = (
+        "<br>".join(
+            f'<span class="target-name">{escape(target_names[code])}</span>'
+            f'<small class="target-code">{escape(code)}</small>'
+            if target_names.get(code)
+            else f'<span class="target-code-only">{escape(code)}</span>'
+            for code in report.targets
+        )
+        if report.targets
+        else '<span class="target-name">无</span>'
+    )
+    is_intraday = report.run_mode == "intraday"
+    mode_name = (
+        "13:05历史模拟"
+        if report.historical_simulation
+        else "13:05盘中信号"
+        if is_intraday
+        else "收盘复盘"
+    )
+    if report.debug:
+        mode_name += " · DEBUG"
+    data_time = report.signal_time or f"{report.as_of.isoformat()} 收盘"
+    subtitle = (
+        f"重建{report.as_of.isoformat()} 13:05历史信号 · 仅用于策略对照"
+        if report.historical_simulation
+        else "13:05实时快照与25日趋势排名 · 当日盘中人工复核"
+        if is_intraday
+        else "市场状态与25日趋势排名 · 下一交易日人工复核"
+    )
+    volume_label = (
+        "预计全天量比"
+        if report.historical_simulation
+        else "预计全天量比"
+        if is_intraday
+        else "量比"
+    )
     warning_items = "".join(f"<li>{escape(item)}</li>" for item in report.warnings)
     market_rows = "".join(
         f"""
@@ -169,19 +216,6 @@ def render_html(report: AdviceReport) -> str:
         </tr>"""
         for index, item in enumerate(report.eligible, start=1)
     ) or '<tr><td colspan="7" class="empty">无ETF通过全部过滤</td></tr>'
-    dual_rows = "".join(
-        f"""
-        <tr class="{'leader secondary' if index == 1 else ''}">
-          <td class="rank">{index}</td>
-          <td><strong>{escape(item.name)}</strong><small>{escape(item.code)}</small></td>
-          <td class="number">{item.trend_momentum_score:.4f}</td>
-          <td class="number">{item.timing_momentum_score:.4f}</td>
-          <td class="number">{item.trend_percentile:.1%}</td>
-          <td class="number">{item.timing_percentile:.1%}</td>
-          <td class="number emph">{item.combined_score:.4f}</td>
-        </tr>"""
-        for index, item in enumerate(report.dual_period_rankings, start=1)
-    ) or '<tr><td colspan="7" class="empty">无双周期推荐</td></tr>'
     ranking_rows = "".join(
         f"""
         <tr>
@@ -202,13 +236,20 @@ def render_html(report: AdviceReport) -> str:
         if report.warnings
         else ""
     )
-    actionable_text = "可执行" if report.actionable else "不可执行"
+    pool_note = (
+        f"发现{report.discovered_pool_size} · 固定{report.fixed_pool_size} · 动态{report.dynamic_pool_size}"
+        if report.discovered_pool_size
+        else "固定池"
+    )
+    actionable_text = (
+        "调试结果" if report.debug else "可执行" if report.actionable else "不可执行"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ETF轮动建议 | {report.as_of.isoformat()}</title>
+<title>ETF轮动建议 | {report.as_of.isoformat()} | {mode_name}</title>
 <style>
   :root {{ --ink:#172126; --muted:#66747b; --line:#d9e0e2; --paper:#ffffff; --canvas:#edf1f2; --green:#167c5a; --green-soft:#e8f4ef; --red:#b63e37; --red-soft:#f9ecea; --amber:#a56212; --amber-soft:#fff4df; --blue:#24618a; }}
   * {{ box-sizing:border-box; }}
@@ -221,12 +262,15 @@ def render_html(report: AdviceReport) -> str:
   .date {{ color:#b9c3c7; font-size:13px; }}
   h1 {{ margin:17px 0 8px; font-size:34px; line-height:1.2; letter-spacing:0; }}
   header p {{ margin:0; color:#c9d1d4; font-size:14px; }}
-  .summary {{ display:grid; grid-template-columns:1.25fr 1fr 1fr .8fr .8fr; border-bottom:1px solid var(--line); background:#f8faf9; }}
+    .summary {{ display:grid; grid-template-columns:1.25fr 1.1fr .8fr .8fr; border-bottom:1px solid var(--line); background:#f8faf9; }}
   .summary-item {{ min-width:0; padding:22px 24px 20px; border-right:1px solid var(--line); }}
   .summary-item:last-child {{ border-right:0; }}
   .label {{ display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:700; }}
   .value {{ display:block; overflow-wrap:anywhere; font-size:20px; font-weight:800; line-height:1.25; }}
-  .value.code {{ color:var(--green); font-family:Consolas,monospace; font-size:18px; }}
+  .value.code {{ color:var(--green); font-size:17px; }}
+  .target-name {{ display:block; color:var(--ink); font-weight:800; }}
+  .target-code {{ display:block; margin-top:3px; color:var(--green); font:700 13px/1.25 Consolas,monospace; }}
+  .target-code-only {{ display:block; color:var(--green); font:700 16px/1.25 Consolas,monospace; }}
   main {{ padding:30px 48px 42px; }}
   section {{ margin-top:32px; }}
   section:first-child {{ margin-top:0; }}
@@ -235,8 +279,9 @@ def render_html(report: AdviceReport) -> str:
   .section-index {{ display:inline-grid; place-items:center; width:27px; height:27px; color:#fff; background:var(--ink); font:700 13px/1 Arial,sans-serif; }}
   h2 {{ margin:0; font-size:19px; line-height:1.25; }}
   .section-note {{ max-width:600px; color:var(--muted); font-size:12px; text-align:right; }}
-  .market-grid {{ display:grid; grid-template-columns:1.05fr 1.95fr; gap:28px; align-items:start; }}
-  .regime-panel {{ padding:24px; border-left:5px solid var(--green); background:var(--green-soft); }}
+  .market-grid {{ display:grid; grid-template-columns:1.05fr 1.95fr; gap:28px; align-items:stretch; }}
+  .market-grid > table {{ height:100%; }}
+  .regime-panel {{ height:100%; padding:24px; border-left:5px solid var(--green); background:var(--green-soft); }}
   .regime-panel.weak {{ border-color:var(--red); background:var(--red-soft); }}
   .regime-name {{ margin:4px 0 7px; font-size:28px; font-weight:800; }}
   .regime-panel p {{ margin:0; color:#405057; }}
@@ -254,6 +299,12 @@ def render_html(report: AdviceReport) -> str:
   .positive {{ color:var(--green); background:var(--green-soft); }}
   .negative {{ color:var(--red); background:var(--red-soft); }}
   .checks {{ white-space:nowrap; }}
+  .ranking-table th:first-child,.ranking-table td:first-child {{ padding-left:0; text-align:left; }}
+  .ranking-table th:nth-child(3),.ranking-table td:nth-child(3),.ranking-table th:nth-child(4),.ranking-table td:nth-child(4) {{ text-align:center; }}
+  .ranking-table th:last-child {{ padding-right:0; text-align:right; }}
+  .ranking-table td:last-child {{ padding-right:0; }}
+  .ranking-table .checks {{ display:flex; justify-content:flex-end; align-items:center; gap:5px; }}
+  .ranking-table .check {{ margin:2px 0; }}
   .check {{ display:inline-block; margin:2px 4px 2px 0; padding:2px 5px; font-size:10px; border:1px solid; }}
   .check.pass {{ color:var(--green); border-color:#9dc9b9; background:#f3faf7; }}
   .check.fail {{ color:var(--red); border-color:#ddb0ac; background:#fff7f6; }}
@@ -261,11 +312,11 @@ def render_html(report: AdviceReport) -> str:
   .notice > div {{ display:flex; align-items:center; gap:10px; }}
   .notice .section-index {{ background:var(--amber); }}
   .notice ul {{ margin:10px 0 0 37px; padding:0; color:#70460e; }}
-  .holdings {{ display:grid; grid-template-columns:1fr 1.4fr; gap:28px; }}
-  .holding-list {{ margin:0; padding:0; list-style:none; }}
-  .holding-list li {{ padding:13px 15px; border-left:4px solid #aab6ba; background:#f4f6f6; }}
+  .holdings {{ display:grid; grid-template-columns:1fr 1.4fr; gap:28px; align-items:stretch; }}
+  .holding-list {{ display:grid; grid-auto-rows:1fr; min-height:100px; margin:0; padding:0; list-style:none; }}
+  .holding-list li {{ display:flex; flex-direction:column; justify-content:center; height:100%; padding:15px 18px; border-left:4px solid #aab6ba; background:#f4f6f6; }}
   .holding-list span {{ display:block; color:var(--muted); font-size:12px; }}
-  .decision {{ padding:15px 18px; border:1px solid var(--line); }}
+  .decision {{ display:flex; min-height:100px; height:100%; flex-direction:column; justify-content:center; padding:15px 18px; border:1px solid var(--line); }}
   .decision strong {{ color:var(--green); font-size:17px; }}
   .decision p {{ margin:5px 0 0; color:var(--muted); }}
   .empty {{ padding:24px; color:var(--muted); text-align:center; }}
@@ -280,46 +331,41 @@ def render_html(report: AdviceReport) -> str:
 <body>
 <article class="report">
   <header>
-    <div class="brand-row"><span class="brand">MOM SELECT · ETF ROTATION</span><span class="date">数据截至 {report.as_of.isoformat()} 收盘</span></div>
+    <div class="brand-row"><span class="brand">MOM SELECT · ETF ROTATION</span><span class="date">{mode_name} · 数据时间 {escape(data_time)}</span></div>
     <h1>ETF轮动策略简报</h1>
-    <p>市场状态、25日趋势排名与10日辅助择时 · 下一交易日人工复核</p>
+    <p>{subtitle}</p>
   </header>
   <div class="summary">
     <div class="summary-item"><span class="label">操作建议</span><span class="value">{escape(report.action)}</span></div>
-    <div class="summary-item"><span class="label">25日策略目标</span><span class="value code">{escape(target)}</span></div>
-    <div class="summary-item"><span class="label">双周期辅助</span><span class="value code">{escape(dual_target)}</span></div>
+    <div class="summary-item"><span class="label">25日策略目标</span><span class="value code">{target_summary}</span></div>
     <div class="summary-item"><span class="label">市场状态</span><span class="value">{regime_name}</span></div>
     <div class="summary-item"><span class="label">数据状态</span><span class="value">{actionable_text}<br><small>{report.analyzed_count}/{report.pool_size}</small></span></div>
   </div>
   <main>
     <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">01</span><h2>市场状态</h2></div><span class="section-note">至少3/4指数位于MA10下方进入走弱期，至少3/4位于上方恢复正常期</span></div>
+      <div class="section-head"><div class="section-title"><span class="section-index">01</span><h2>市场状态</h2></div><span class="section-note">{pool_note} · 至少3/4指数位于MA10下方进入走弱期，至少3/4位于上方恢复正常期</span></div>
       <div class="market-grid">
         <div class="regime-panel {regime_class}"><span class="label">当前状态</span><div class="regime-name">{regime_name}</div><p>{escape(report.market.explanation)}</p></div>
         <table><thead><tr><th>指数</th><th>收盘</th><th>MA10</th><th>位置</th></tr></thead><tbody>{market_rows}</tbody></table>
       </div>
     </section>
-    {warning_section}
     <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">02</span><h2>组合结论</h2></div><span class="section-note">正式目标继续由原25日策略产生；双周期结果只作为人工择时参考</span></div>
+      <div class="section-head"><div class="section-title"><span class="section-index">02</span><h2>组合结论</h2></div><span class="section-note">目标由25日加权趋势、R²与风险过滤共同产生</span></div>
       <div class="holdings"><ul class="holding-list">{holdings}</ul><div class="decision"><span class="label">策略说明</span><strong>{escape(report.action)} · {escape(target)}</strong><p>{escape(report.explanation)}</p></div></div>
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">03</span><h2>25日趋势排名</h2></div><span class="section-note">已通过动量、市场状态、量能、短期跌幅与流动性过滤</span></div>
-      <table><thead><tr><th style="width:5%">#</th><th style="width:29%">ETF</th><th style="width:13%;text-align:right">动量分</th><th style="width:13%;text-align:right">趋势年化</th><th style="width:11%;text-align:right">R²</th><th style="width:11%;text-align:right">量比</th><th style="width:18%;text-align:right">3日均成交额</th></tr></thead><tbody>{eligible_rows}</tbody></table>
+      <table><thead><tr><th style="width:5%">#</th><th style="width:29%">ETF</th><th style="width:13%;text-align:right">动量分</th><th style="width:13%;text-align:right">趋势年化</th><th style="width:11%;text-align:right">R²</th><th style="width:11%;text-align:right">{volume_label}</th><th style="width:18%;text-align:right">3日均成交额</th></tr></thead><tbody>{eligible_rows}</tbody></table>
     </section>
     <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">04</span><h2>25日趋势 + 10日择时</h2></div><span class="section-note">25日动量百分位70% + 10日动量百分位30%，仅在25日合格池内排名</span></div>
-      <table><thead><tr><th style="width:5%">#</th><th style="width:28%">ETF</th><th style="width:13%;text-align:right">25日动量</th><th style="width:13%;text-align:right">10日动量</th><th style="width:13%;text-align:right">25日百分位</th><th style="width:13%;text-align:right">10日百分位</th><th style="width:15%;text-align:right">综合分</th></tr></thead><tbody>{dual_rows}</tbody></table>
+      <div class="section-head"><div class="section-title"><span class="section-index">04</span><h2>全池动量前20</h2></div><span class="section-note">展示高动量但可能因过热、量能或短期下跌而未通过的标的</span></div>
+      <table class="ranking-table"><thead><tr><th style="width:5%">#</th><th style="width:34%">ETF</th><th style="width:14%">动量分</th><th style="width:12%">结果</th><th style="width:35%">过滤检查</th></tr></thead><tbody>{ranking_rows}</tbody></table>
     </section>
     <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">05</span><h2>全池动量前20</h2></div><span class="section-note">展示高动量但可能因过热、量能或短期下跌而未通过的标的</span></div>
-      <table><thead><tr><th style="width:5%">#</th><th style="width:27%">ETF</th><th style="width:13%;text-align:right">动量分</th><th style="width:11%">结果</th><th style="width:44%">过滤检查</th></tr></thead><tbody>{ranking_rows}</tbody></table>
+      <div class="section-head"><div class="section-title"><span class="section-index">05</span><h2>人工执行检查</h2></div></div>
+      <ul class="checklist"><li>核对ETF公告、停牌、涨跌停和申赎状态</li><li>跨境、商品与LOF核对溢价率和相关市场休市</li><li>换仓时先确认卖出成交，再考虑买入</li><li>记录实际成交价及人工拒绝信号的原因</li><li>价格或数据异常时不交易</li><li>{'13:05信号仅供当日盘中人工复核' if is_intraday else '本报告不连接账户，也不会自动下单'}</li></ul>
     </section>
-    <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">06</span><h2>人工执行检查</h2></div></div>
-      <ul class="checklist"><li>核对ETF公告、停牌、涨跌停和申赎状态</li><li>跨境、商品与LOF核对溢价率和相关市场休市</li><li>换仓时先确认卖出成交，再考虑买入</li><li>记录实际成交价及人工拒绝信号的原因</li><li>价格或数据异常时不交易</li><li>本报告不连接账户，也不会自动下单</li></ul>
-    </section>
+    {warning_section}
   </main>
   <footer><span>仅供策略研究与人工复核，不构成投资建议</span><span>生成时间 {escape(report.generated_at)}</span></footer>
 </article>
@@ -357,13 +403,19 @@ def render_html_to_png(html_path: Path, image_path: Path) -> None:
         )
         page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1.5)
         page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
-        page.screenshot(path=str(image_path), full_page=True)
+        # Capture the report element itself rather than the wider browser
+        # viewport, otherwise the canvas background becomes visible as side
+        # margins in the exported image.
+        page.locator(".report").screenshot(path=str(image_path))
         browser.close()
 
 
 def write_reports(report: AdviceReport, report_dir: Path) -> ReportPaths:
     report_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{report.as_of.isoformat()}-etf-advice"
+    suffix = "-intraday" if report.run_mode == "intraday" else ""
+    if report.debug:
+        suffix += "-debug"
+    stem = f"{report.as_of.isoformat()}-etf-advice{suffix}"
     markdown_path = report_dir / f"{stem}.md"
     json_path = report_dir / f"{stem}.json"
     html_path = report_dir / f"{stem}.html"
