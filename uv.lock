@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -281,7 +281,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "playwright", specifier = ">=1.50" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", extras = ["socks"], specifier = ">=2.32" },
+    { name = "requests", extras = ["socks"], specifier = ">=2.34.2" },
 ]
 
 [package.metadata.requires-dev]
