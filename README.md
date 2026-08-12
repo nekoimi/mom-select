@@ -23,6 +23,8 @@
 uv sync --dev
 ```
 
+Linux 长期运行可使用 Supervisor 托管内置调度器，详见 [`deploy/README.md`](deploy/README.md)。调度器按上海时区在工作日 13:05 调用一次 CLI，不需要额外配置 cron。
+
 ## 运行
 
 交易日13:05-13:10生成盘中建议（默认模式）：

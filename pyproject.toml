@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
     "playwright>=1.50",
+    "apscheduler>=3.10,<4",
 ]
 
 [project.scripts]

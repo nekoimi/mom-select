@@ -423,3 +423,7 @@ def main() -> None:
     print(f"HTML报告：{paths.html}")
     print(f"图片报告：{paths.image}")
     print(f"完成时间：{datetime.now().astimezone().isoformat(timespec='seconds')}")
+
+
+if __name__ == "__main__":
+    main()
