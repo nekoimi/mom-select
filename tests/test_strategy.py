@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 
 from mom_select.models import EtfMetrics, Holding, StrategyConfig
-from mom_select.strategy import assess_market, calculate_metrics, choose_targets
+from mom_select.strategy import (
+    assess_market,
+    build_dual_period_rankings,
+    calculate_metrics,
+    choose_targets,
+)
 
 
 def history(values: np.ndarray, volume: float = 1_000_000) -> pd.DataFrame:
@@ -23,7 +28,7 @@ def history(values: np.ndarray, volume: float = 1_000_000) -> pd.DataFrame:
     )
 
 
-def metric(code: str, score: float) -> EtfMetrics:
+def metric(code: str, score: float, timing_score: float = 0.0) -> EtfMetrics:
     return EtfMetrics(
         code=code,
         name=code,
@@ -39,6 +44,7 @@ def metric(code: str, score: float) -> EtfMetrics:
         passed_volume=True,
         passed_loss=True,
         passed_liquidity=True,
+        timing_momentum_score=timing_score,
     )
 
 
@@ -96,3 +102,16 @@ def test_empty_selection_uses_defensive_etf() -> None:
     candidates, targets = choose_targets([], [], "normal", StrategyConfig())
     assert candidates == []
     assert targets == ["511880.XSHG"]
+
+
+def test_dual_period_ranking_uses_seventy_thirty_percentiles() -> None:
+    eligible = [
+        metric("trend", 3.0, 1.0),
+        metric("balanced", 2.0, 3.0),
+        metric("timing", 1.0, 2.0),
+    ]
+
+    result = build_dual_period_rankings(eligible, StrategyConfig())
+
+    assert [item.code for item in result] == ["trend", "balanced", "timing"]
+    assert result[0].combined_score == 0.7 * 1.0 + 0.3 * (1 / 3)

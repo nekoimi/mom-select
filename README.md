@@ -9,10 +9,11 @@
 - 通过4个A股指数与MA10判断正常期/走弱期，并保存状态机结果。
 - 正常期分析原策略固定池全部114只ETF；走弱期只分析17只全球、跨境和商品ETF。
 - 使用25日近期加权的对数价格回归计算年化趋势、R²和动量分。
+- 在不改变原25日策略目标的前提下，额外输出“25日趋势确认 + 10日辅助择时”榜单：25日与10日动量先转为截面百分位，再按70%/30%合成。
 - 应用动量、R²/MA10、成交量、最近3日跌幅和成交额过滤。
 - 当前持仓处于第一名90%得分范围内时优先保留。
 - 无风险ETF通过时输出货币ETF `511880.XSHG` 作为防御目标。
-- 输出Markdown人工报告和JSON结构化结果。
+- 输出Markdown、JSON、设计后的HTML长图报告及对应PNG图片。
 - ETF行情缓存为CSV，支持断网后使用 `--offline` 复现。
 
 第一版有意不实现原脚本的全市场名称动态分类：按清洗后名称前两个字符归类容易误判。ETF池维护在 `config/etf_pool.csv`，可人工审核后调整。
@@ -57,7 +58,7 @@ code,name,amount,avg_cost
 uv run mom-select --offline --date 2026-08-11 --no-save-state
 ```
 
-报告生成到 `reports/YYYY-MM-DD-etf-advice.md` 和对应JSON文件。行情缓存位于 `data/cache/`。
+报告生成到 `reports/`，同一日期包含Markdown、JSON、HTML和PNG四种格式。HTML可直接用浏览器打开，PNG为适合查看和分享的整页长图。行情缓存位于 `data/cache/`。
 
 ## 数据源说明
 

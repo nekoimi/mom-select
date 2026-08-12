@@ -11,6 +11,9 @@ Regime = Literal["normal", "weak"]
 @dataclass(frozen=True)
 class StrategyConfig:
     lookback_days: int = 25
+    timing_lookback_days: int = 10
+    trend_weight: float = 0.7
+    timing_weight: float = 0.3
     min_score: float = 0.0
     max_score: float = 5.0
     r2_threshold: float = 0.4
@@ -62,6 +65,9 @@ class EtfMetrics:
     passed_volume: bool
     passed_loss: bool
     passed_liquidity: bool
+    timing_momentum_score: float = 0.0
+    timing_annualized_return: float = 0.0
+    timing_r_squared: float = 0.0
 
     @property
     def passed_all(self) -> bool:
@@ -84,6 +90,17 @@ class Holding:
     avg_cost: float = 0
 
 
+@dataclass(frozen=True)
+class DualPeriodRanking:
+    code: str
+    name: str
+    trend_momentum_score: float
+    timing_momentum_score: float
+    trend_percentile: float
+    timing_percentile: float
+    combined_score: float
+
+
 @dataclass
 class AdviceReport:
     generated_at: str
@@ -95,6 +112,8 @@ class AdviceReport:
     rankings: list[EtfMetrics]
     eligible: list[EtfMetrics]
     candidates: list[EtfMetrics]
+    dual_period_rankings: list[DualPeriodRanking]
+    dual_period_target: str | None
     current_holdings: list[Holding]
     targets: list[str]
     action: str

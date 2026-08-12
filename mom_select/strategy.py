@@ -10,6 +10,7 @@ import pandas as pd
 
 from mom_select.models import (
     AdviceReport,
+    DualPeriodRanking,
     EtfMetrics,
     Holding,
     IndexSignal,
@@ -117,6 +118,7 @@ def calculate_metrics(
 ) -> EtfMetrics:
     required_rows = max(
         config.lookback_days + 1,
+        config.timing_lookback_days + 1,
         config.ma_lookback,
         config.volume_lookback + 1,
         config.liquidity_lookback,
@@ -127,6 +129,9 @@ def calculate_metrics(
         raise ValueError(f"仅有{len(clean)}行有效数据，至少需要{required_rows}行")
     closes = clean["close"].to_numpy(dtype=float)
     score, annualized_return, r_squared = calculate_momentum(closes, config.lookback_days)
+    timing_score, timing_annualized_return, timing_r_squared = calculate_momentum(
+        closes, config.timing_lookback_days
+    )
     close = float(closes[-1])
     moving_average = float(np.mean(closes[-config.ma_lookback :]))
     prior_volumes = clean["volume"].to_numpy(dtype=float)[-(config.volume_lookback + 1) : -1]
@@ -149,7 +154,47 @@ def calculate_metrics(
         passed_volume=volume_ratio < config.volume_threshold,
         passed_loss=bool(np.min(daily_ratios) >= config.daily_loss_floor),
         passed_liquidity=average_turnover >= config.min_average_turnover,
+        timing_momentum_score=timing_score,
+        timing_annualized_return=timing_annualized_return,
+        timing_r_squared=timing_r_squared,
     )
+
+
+def build_dual_period_rankings(
+    eligible: list[EtfMetrics], config: StrategyConfig
+) -> list[DualPeriodRanking]:
+    """Rank 25-day-confirmed ETFs with a 10-day timing overlay."""
+    if not eligible:
+        return []
+    trend_scores = pd.Series(
+        {item.code: item.momentum_score for item in eligible}, dtype=float
+    )
+    timing_scores = pd.Series(
+        {item.code: item.timing_momentum_score for item in eligible}, dtype=float
+    )
+    trend_percentiles = trend_scores.rank(method="average", pct=True)
+    timing_percentiles = timing_scores.rank(method="average", pct=True)
+    by_code = {item.code: item for item in eligible}
+    rankings = []
+    for code, item in by_code.items():
+        trend_percentile = float(trend_percentiles[code])
+        timing_percentile = float(timing_percentiles[code])
+        rankings.append(
+            DualPeriodRanking(
+                code=code,
+                name=item.name,
+                trend_momentum_score=item.momentum_score,
+                timing_momentum_score=item.timing_momentum_score,
+                trend_percentile=trend_percentile,
+                timing_percentile=timing_percentile,
+                combined_score=(
+                    config.trend_weight * trend_percentile
+                    + config.timing_weight * timing_percentile
+                ),
+            )
+        )
+    rankings.sort(key=lambda item: item.combined_score, reverse=True)
+    return rankings
 
 
 def choose_targets(
@@ -193,6 +238,7 @@ def build_report(
 ) -> AdviceReport:
     rankings.sort(key=lambda item: item.momentum_score, reverse=True)
     eligible = [item for item in rankings if item.passed_all]
+    dual_period_rankings = build_dual_period_rankings(eligible, config)
     candidates, targets = choose_targets(eligible, holdings, market.regime, config)
     current_codes = [holding.code for holding in holdings if holding.amount > 0]
     coverage = len(rankings) / pool_size if pool_size else 0
@@ -229,6 +275,8 @@ def build_report(
         rankings=rankings,
         eligible=eligible[:10],
         candidates=candidates,
+        dual_period_rankings=dual_period_rankings[:10],
+        dual_period_target=(dual_period_rankings[0].code if dual_period_rankings else None),
         current_holdings=holdings,
         targets=targets,
         action=action,

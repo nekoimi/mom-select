@@ -7,3 +7,5 @@ data/cache-*/
 data/market_state.json
 reports/*.md
 reports/*.json
+reports/*.html
+reports/*.png

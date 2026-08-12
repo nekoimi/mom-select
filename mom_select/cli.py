@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run(args: argparse.Namespace) -> tuple[Path, Path]:
+def run(args: argparse.Namespace):
     config = DEFAULT_STRATEGY_CONFIG
     pool = load_etf_pool(args.pool)
     holdings = load_holdings(args.portfolio)
@@ -147,10 +147,12 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     try:
-        markdown_path, json_path = run(args)
+        paths = run(args)
     except Exception as exc:
         print(f"生成建议失败：{exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    print(f"ETF建议已生成：{markdown_path}")
-    print(f"结构化结果：{json_path}")
+    print(f"Markdown报告：{paths.markdown}")
+    print(f"结构化结果：{paths.json}")
+    print(f"HTML报告：{paths.html}")
+    print(f"图片报告：{paths.image}")
     print(f"完成时间：{datetime.now().astimezone().isoformat(timespec='seconds')}")
