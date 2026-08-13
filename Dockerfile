@@ -24,10 +24,7 @@ COPY config/config.example.yaml ./config/config.example.yaml
 
 RUN uv sync --frozen --no-dev
 
-RUN mkdir -p /app/config /app/data/cache /app/data/state /app/reports \
-    && chown -R 10001:10001 /app /ms-playwright
-
-USER 10001:10001
+RUN mkdir -p /app/config /app/data/cache /app/data/state /app/reports
 
 ENTRYPOINT ["uv", "run", "--frozen", "--no-dev", "--no-sync", "python", "-m", "scripts.mom_select_scheduler"]
 CMD ["--config", "/app/config/config.yaml"]
