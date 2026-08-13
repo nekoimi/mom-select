@@ -11,14 +11,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-cjk tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-RUN uv run --no-project playwright install --with-deps chromium
+RUN uv run --no-project --no-dev playwright install --with-deps chromium
 
 COPY mom_select ./mom_select
 COPY scripts ./scripts
-COPY main.py README.md ./
+COPY main.py ./
 COPY config/etf_pool.csv ./config/etf_pool.csv
 COPY config/config.example.yaml ./config/config.example.yaml
 
