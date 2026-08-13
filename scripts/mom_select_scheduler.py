@@ -31,7 +31,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 LOG = logging.getLogger("mom-select-scheduler")
 
 
-def build_run_args(settings: AppSettings) -> SimpleNamespace:
+def build_run_args(settings: AppSettings, *, debug: bool = False) -> SimpleNamespace:
     """Build the Namespace expected by ``mom_select.cli.run``."""
     return SimpleNamespace(
         date=date.today(),
@@ -44,17 +44,18 @@ def build_run_args(settings: AppSettings) -> SimpleNamespace:
         offline=False,
         fixed_pool_only=settings.fixed_pool_only,
         strategy_config=settings.strategy,
-        debug=False,
+        debug=debug,
         workers=settings.workers,
         allow_incomplete_day=False,
         no_save_state=True,
     )
 
 
-def run_scheduled(settings: AppSettings) -> None:
+def run_scheduled(settings: AppSettings, *, debug: bool = False) -> None:
     """Generate today's intraday report directly in this process."""
-    run_args = build_run_args(settings)
-    LOG.info("开始执行ETF建议：%s", run_args.date.isoformat())
+    run_args = build_run_args(settings, debug=debug)
+    mode_label = "DEBUG" if debug else "正式"
+    LOG.info("开始执行ETF建议：%s（%s）", run_args.date.isoformat(), mode_label)
     try:
         paths = run(run_args)
     except Exception:
@@ -63,7 +64,12 @@ def run_scheduled(settings: AppSettings) -> None:
     LOG.info("报告生成完成：%s", paths.html)
     for notifier in build_notifiers(settings.notification):
         try:
-            notify_all([notifier], paths.image, f"ETF动量策略日报 {run_args.date.isoformat()}", f"报告：{paths.html}")
+            subject = f"ETF动量策略日报 {run_args.date.isoformat()}"
+            text = f"报告：{paths.html}"
+            if debug:
+                subject = f"[DEBUG] {subject}"
+                text = f"调试消息，不作为正式交易信号。\n{text}"
+            notify_all([notifier], paths.image, subject, text)
             LOG.info("通知发送完成：%s", type(notifier).__name__)
         except Exception:
             LOG.exception("通知发送失败：%s", type(notifier).__name__)
@@ -95,7 +101,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="使用APScheduler定时生成13:05 ETF建议")
     parser.add_argument("--config", default="config/config.yaml")
     parser.add_argument("--run-once", action="store_true", help="立即调用一次任务后退出")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="固定策略时间为当日13:05并发送DEBUG通知，仅可与--run-once一起使用",
+    )
     args = parser.parse_args()
+    if args.debug and not args.run_once:
+        parser.error("--debug只能与--run-once一起使用，不能用于常驻调度")
 
     logging.basicConfig(
         level=logging.INFO,
@@ -103,7 +116,7 @@ def main() -> None:
     )
     settings = load_settings(Path(args.config))
     if args.run_once:
-        run_scheduled(settings)
+        run_scheduled(settings, debug=args.debug)
         return
 
     scheduler = create_scheduler(settings)

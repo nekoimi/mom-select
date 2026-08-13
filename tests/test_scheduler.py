@@ -18,6 +18,12 @@ def test_build_run_args_targets_intraday_mode():
     assert args.portfolio == Path("/opt/mom-select/config/portfolio.csv")
 
 
+def test_build_run_args_supports_debug_notification_run():
+    args = build_run_args(AppSettings(), debug=True)
+    assert args.debug is True
+    assert args.no_save_state is True
+
+
 def test_scheduler_has_weekday_1305_trigger():
     scheduler = create_scheduler(AppSettings(schedule=ScheduleSettings()))
     job = scheduler.get_job("daily-etf-advice")

@@ -100,6 +100,22 @@ uv run --frozen --no-dev --no-sync
 
 调度器使用 APScheduler，默认按 `Asia/Shanghai` 时区在工作日 13:05 执行，任务直接调用策略函数。Docker Compose 推荐用于生产环境；Supervisor 配置仍保留在 `deploy/supervisor/`。
 
+立即生成 DEBUG 报告并测试消息通知：
+
+```bash
+uv run python -m scripts.mom_select_scheduler \
+  --config config/config.yaml --run-once --debug
+```
+
+Docker Compose 中执行：
+
+```bash
+docker compose run --rm mom-select \
+  --config /app/config/config.yaml --run-once --debug
+```
+
+通知标题会带 `[DEBUG]`，正文注明不作为正式交易信号。`--debug` 只能和 `--run-once` 一起使用，不会影响常驻定时任务。
+
 ## 数据和限制
 
 - 默认使用东方财富公开接口，失败时回退到腾讯接口。
