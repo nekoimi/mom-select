@@ -19,7 +19,7 @@ services:
       - etf_reports:/app/reports
       - etf_state:/app/data/state
     healthcheck:
-      test: ["CMD", "/app/.venv/bin/python", "-c", "import mom_select, yaml, playwright, apscheduler, requests"]
+      test: ["CMD", "uv", "run", "--frozen", "--no-dev", "--no-sync", "python", "-c", "import mom_select, yaml, playwright, apscheduler, requests"]
       interval: 30s
       timeout: 5s
       retries: 3

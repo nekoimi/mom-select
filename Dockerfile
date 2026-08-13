@@ -14,7 +14,7 @@ RUN apt-get update \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-RUN uv run playwright install --with-deps chromium
+RUN uv run --no-project playwright install --with-deps chromium
 
 COPY mom_select ./mom_select
 COPY scripts ./scripts
@@ -29,5 +29,5 @@ RUN mkdir -p /app/config /app/data/cache /app/data/state /app/reports \
 
 USER 10001:10001
 
-ENTRYPOINT ["/app/.venv/bin/python", "-m", "scripts.mom_select_scheduler"]
+ENTRYPOINT ["uv", "run", "--frozen", "--no-dev", "--no-sync", "python", "-m", "scripts.mom_select_scheduler"]
 CMD ["--config", "/app/config/config.yaml"]

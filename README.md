@@ -28,7 +28,7 @@ Linux 长期运行可使用 Supervisor 托管内置调度器，详见 [`deploy/R
 
 ## 运行
 
-生产部署推荐使用 Docker Compose：复制 `config/config.example.yaml` 为 `config/config.yaml`，复制 `.env.example` 为 `.env`，填写通知密钥后执行 `docker compose up -d`。镜像内已包含 Playwright Chromium、Linux 运行库和 `Noto Sans CJK` 中文字体，宿主机不需要安装浏览器。
+生产部署推荐使用 Docker Compose：复制 `config/config.example.yaml` 为 `config/config.yaml`，复制 `.env.example` 为 `.env`，填写通知密钥后执行 `docker compose up -d`。容器运行入口使用镜像内的 uv（`uv run --frozen --no-dev --no-sync`）启动项目虚拟环境，已包含 Playwright Chromium、Linux 运行库和 `Noto Sans CJK` 中文字体，宿主机不需要安装浏览器。
 
 GitHub Actions 不会因推送分支或创建 Tag 自动发布镜像。提交 Pull Request 时会执行 Ruff 静态检查和依赖安全检查；需要构建并发布镜像时，在 Actions 页面手动运行 `Docker` workflow。Dependabot 每周检查 uv 项目依赖和 GitHub Actions 版本。
 
