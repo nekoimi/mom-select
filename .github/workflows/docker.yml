@@ -47,9 +47,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
+            type=raw,value=latest
             type=ref,event=branch
-            type=ref,event=tag
-            type=sha
+            type=sha,prefix=sha-
       - uses: docker/build-push-action@v7
         with:
           context: .
