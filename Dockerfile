@@ -1,5 +1,10 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+LABEL org.opencontainers.image.source="https://github.com/nekoimi/mom-select" \
+      org.opencontainers.image.url="https://github.com/nekoimi/mom-select" \
+      org.opencontainers.image.documentation="https://github.com/nekoimi/mom-select#readme" \
+      org.opencontainers.image.title="mom-select"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \

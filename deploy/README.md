@@ -6,7 +6,7 @@
 
 ```bash
 cd /opt
-git clone <repository-url> mom-select
+git clone https://github.com/nekoimi/mom-select.git
 cd mom-select
 uv sync --no-dev
 PLAYWRIGHT_BROWSERS_PATH=/opt/mom-select/.playwright \
@@ -44,7 +44,7 @@ sudo supervisorctl status mom-select-scheduler
   --run-once
 ```
 
-正式调度不需要 cron。APScheduler 使用 `CronTrigger(day_of_week="mon-fri", hour=13, minute=5)`，并设置单实例、合并错过触发和 5 分钟误触发宽限。Supervisor 使用 `uv sync` 创建的 `/opt/mom-select/.venv/bin/python`，不会依赖全局 Python 或全局 uv。周末自动跳到下周一；中国法定节假日没有单独日历时，程序可能在该日尝试一次并因无行情退出本次执行，随后继续等待下一工作日。若需要严格跳过节假日，可接入交易日历。
+正式调度不需要 cron。APScheduler 使用 `CronTrigger(day_of_week="mon-fri", hour=13, minute=5)`，并设置单实例、合并错过触发和 5 分钟误触发宽限。Supervisor 使用 `uv sync` 创建的 `/opt/mom-select/.venv/bin/python`，不会依赖全局 Python 或全局 uv。任务执行前使用 AKShare 中国交易日历确认当天开市，周末和法定休市日会直接跳过。
 
 查看日志：
 

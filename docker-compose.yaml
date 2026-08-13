@@ -1,6 +1,6 @@
 services:
   mom-select:
-    image: ghcr.io/${GHCR_OWNER:-your-org}/mom-select:${IMAGE_TAG:-latest}
+    image: ghcr.io/nekoimi/mom-select:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile

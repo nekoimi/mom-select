@@ -2,6 +2,8 @@
 
 从聚宽策略中提取市场判断和 ETF 动量选择逻辑，生成供人工复核的报告。本项目只提供建议，不连接账户、不自动下单；`original.py` 作为原始回溯模板，保持不修改。
 
+项目地址：<https://github.com/nekoimi/mom-select>
+
 ## 功能
 
 - 13:05 盘中信号和收盘复盘两种模式
@@ -78,7 +80,22 @@ webhook: ${WECHAT_WEBHOOK}
 
 ## Docker 部署
 
-镜像已包含 Python、uv、Playwright Chromium、中文字体和浏览器运行库，宿主机不需要安装浏览器。
+生产镜像同时发布到 GHCR 和 Docker Hub，均包含 Python、uv、Playwright Chromium、中文字体和浏览器运行库，宿主机不需要安装浏览器：
+
+- GHCR：[`ghcr.io/nekoimi/mom-select:latest`](https://github.com/nekoimi/mom-select/pkgs/container/mom-select)
+- Docker Hub：[`nekoimi/mom-select:latest`](https://hub.docker.com/r/nekoimi/mom-select)
+
+```bash
+git clone https://github.com/nekoimi/mom-select.git
+cd mom-select
+docker pull ghcr.io/nekoimi/mom-select:latest
+```
+
+也可以从 Docker Hub 拉取：
+
+```bash
+docker pull nekoimi/mom-select:latest
+```
 
 ```bash
 cp config/config.example.yaml config/config.yaml

@@ -14,6 +14,11 @@ dependencies = [
     "akshare>=1.17",
 ]
 
+[project.urls]
+Homepage = "https://github.com/nekoimi/mom-select"
+Repository = "https://github.com/nekoimi/mom-select.git"
+Issues = "https://github.com/nekoimi/mom-select/issues"
+
 [project.scripts]
 mom-select = "mom_select.cli:main"
 

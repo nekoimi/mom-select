@@ -51,8 +51,8 @@ jobs:
         id: meta
         with:
           images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+            ghcr.io/nekoimi/mom-select
+            docker.io/nekoimi/mom-select
           tags: |
             type=raw,value=latest
             type=ref,event=branch
