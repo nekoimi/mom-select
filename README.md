@@ -44,6 +44,8 @@ cp config/portfolio.example.csv config/portfolio.csv
 uv run mom-select --portfolio config/portfolio.csv
 ```
 
+没有持仓时可保留空文件或只保留 CSV 表头，程序会按空仓处理。
+
 历史离线复盘：
 
 ```bash
@@ -90,10 +92,10 @@ Compose 持久化以下数据：
 - `etf_reports`：报告文件
 - `etf_state`：市场状态
 
-配置文件和持仓文件以只读方式挂载。容器使用镜像内 uv 启动：
+配置文件和持仓文件以只读方式挂载。镜像包含生产和开发依赖，容器使用镜像内 uv 启动，运行时不会重新同步或下载依赖：
 
 ```text
-uv run --frozen --no-dev --no-sync
+uv run --frozen --no-sync
 ```
 
 ## 定时执行

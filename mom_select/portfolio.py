@@ -6,9 +6,12 @@ from mom_select.models import Holding
 
 
 def load_holdings(path: Path | None) -> list[Holding]:
-    if path is None or not path.exists():
+    if path is None or not path.exists() or path.stat().st_size == 0:
         return []
-    frame = pd.read_csv(path, dtype={"code": str})
+    try:
+        frame = pd.read_csv(path, dtype={"code": str})
+    except pd.errors.EmptyDataError:
+        return []
     if "code" not in frame.columns:
         raise ValueError("持仓文件至少需要code字段")
     holdings = []

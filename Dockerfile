@@ -12,9 +12,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --all-groups --no-install-project
 
-RUN uv run --no-project --no-dev playwright install --with-deps chromium
+RUN uv run --frozen --no-sync playwright install --with-deps chromium
 
 COPY mom_select ./mom_select
 COPY scripts ./scripts
@@ -22,9 +22,9 @@ COPY main.py ./
 COPY config/etf_pool.csv ./config/etf_pool.csv
 COPY config/config.example.yaml ./config/config.example.yaml
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --all-groups
 
 RUN mkdir -p /app/config /app/data/cache /app/data/state /app/reports
 
-ENTRYPOINT ["uv", "run", "--frozen", "--no-dev", "--no-sync", "python", "-m", "scripts.mom_select_scheduler"]
+ENTRYPOINT ["uv", "run", "--frozen", "--no-sync", "python", "-m", "scripts.mom_select_scheduler"]
 CMD ["--config", "/app/config/config.yaml"]
