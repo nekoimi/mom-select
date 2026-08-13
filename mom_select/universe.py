@@ -84,6 +84,9 @@ def load_etf_pool(path: Path) -> pd.DataFrame:
     if frame["code"].duplicated().any():
         duplicates = frame.loc[frame["code"].duplicated(), "code"].tolist()
         raise ValueError(f"ETF池存在重复代码: {duplicates}")
+    invalid_codes = frame.loc[~frame["code"].str.fullmatch(r"\d{6}\.(?:XSHG|XSHE)"), "code"].tolist()
+    if invalid_codes:
+        raise ValueError(f"ETF池包含无效证券代码: {invalid_codes}")
     invalid = frame.loc[~frame["bucket"].isin(["global", "china"]), "bucket"].unique()
     if len(invalid):
         raise ValueError(f"ETF池包含未知分类: {invalid.tolist()}")

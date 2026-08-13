@@ -11,8 +11,12 @@ from typing import Protocol
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from calendar import timegm
+from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 PRICE_COLUMNS = ["date", "open", "close", "high", "low", "volume", "turnover"]
@@ -123,8 +127,15 @@ class EastmoneyDataProvider:
         )
 
     @staticmethod
-    def _secid(code: str) -> str:
-        raw_code, exchange = code.split(".", maxsplit=1)
+    def _split_code(code: str) -> tuple[str, str]:
+        match = re.fullmatch(r"(\d{6})\.(XSHG|XSHE)", str(code))
+        if not match:
+            raise ValueError(f"无效证券代码: {code!r}，应为6位数字.XSHG或.XSHE")
+        return match.group(1), match.group(2)
+
+    @classmethod
+    def _secid(cls, code: str) -> str:
+        raw_code, exchange = cls._split_code(code)
         market = "1" if exchange == "XSHG" else "0"
         return f"{market}.{raw_code}"
 
@@ -133,14 +144,21 @@ class EastmoneyDataProvider:
 
     @staticmethod
     def _symbol(code: str) -> str:
-        raw_code, exchange = code.split(".", maxsplit=1)
+        raw_code, exchange = EastmoneyDataProvider._split_code(code)
         return f"{'sh' if exchange == 'XSHG' else 'sz'}{raw_code}"
 
     def _read_cache(self, code: str) -> pd.DataFrame:
         path = self._cache_path(code)
         if not path.exists():
             return _empty_frame()
-        frame = pd.read_csv(path, parse_dates=["date"])
+        try:
+            frame = pd.read_csv(path, parse_dates=["date"])
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            self.warnings.add(f"ETF {code} 本地缓存损坏，将尝试重新获取: {exc}")
+            return _empty_frame()
+        if not set(PRICE_COLUMNS).issubset(frame.columns):
+            self.warnings.add(f"ETF {code} 本地缓存缺少行情字段，将尝试重新获取")
+            return _empty_frame()
         return frame[PRICE_COLUMNS].sort_values("date").drop_duplicates("date")
 
     def _request_json(self, request: Request) -> dict:
@@ -370,7 +388,7 @@ class EastmoneyDataProvider:
 
     def _fetch_yahoo(self, code: str, start: date, end: date) -> pd.DataFrame:
         """Fetch daily bars from Yahoo Finance as a last-resort public source."""
-        raw_code, exchange = code.split(".", maxsplit=1)
+        raw_code, exchange = self._split_code(code)
         suffix = ".SZ" if exchange == "XSHE" else ".SS"
         period1 = timegm(start.timetuple())
         # Yahoo's period2 is exclusive; include the requested end date.
@@ -426,7 +444,7 @@ class EastmoneyDataProvider:
     def _fetch_yahoo_intraday_snapshot(
         self, code: str, trading_date: date, cutoff: datetime
     ) -> tuple[pd.DataFrame, datetime]:
-        raw_code, exchange = code.split(".", maxsplit=1)
+        raw_code, exchange = self._split_code(code)
         suffix = ".SZ" if exchange == "XSHE" else ".SS"
         query = urlencode(
             {
@@ -455,7 +473,7 @@ class EastmoneyDataProvider:
         quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
         day_bars = []
         for index, timestamp in enumerate(timestamps):
-            quote_time = datetime.fromtimestamp(int(timestamp)).astimezone()
+            quote_time = datetime.fromtimestamp(int(timestamp), tz=SHANGHAI)
             if quote_time.date() != trading_date:
                 continue
             try:

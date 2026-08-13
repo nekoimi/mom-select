@@ -61,16 +61,40 @@ def load_settings(path: Path) -> AppSettings:
     notification = raw.get("notifications", {})
     schedule = raw.get("schedule", {})
     strategy_raw = raw.get("strategy", {})
-    base = path.parent.parent if path.parent.name == "config" else path.parent
+    config_base = path.parent.parent if path.parent.name == "config" else path.parent
+
+    project_value = runtime.get("project_dir")
+    if project_value:
+        project_path = Path(str(project_value)).expanduser()
+        project_dir = project_path if project_path.is_absolute() else config_base / project_path
+    else:
+        project_dir = config_base
 
     def resolve(value: str | None) -> Path | None:
         if not value:
             return None
-        item = Path(value).expanduser()
-        return item if item.is_absolute() else base / item
+        item = Path(str(value)).expanduser()
+        return item if item.is_absolute() else project_dir / item
 
-    return AppSettings(
-        project_dir=resolve(runtime.get("project_dir")) or base,
+    strategy = StrategyConfig(
+        **{
+            field_name: strategy_raw.get(field_name, getattr(StrategyConfig(), field_name))
+            for field_name in StrategyConfig.__dataclass_fields__
+        }
+    )
+    if int(runtime.get("workers", 8)) < 1:
+        raise ValueError("runtime.workers必须为正整数")
+    positive_fields = ("lookback_days", "ma_lookback", "volume_lookback", "liquidity_lookback", "holdings_num")
+    if any(getattr(strategy, field_name) < 1 for field_name in positive_fields):
+        raise ValueError("策略窗口和持仓数量必须为正整数")
+    if not 0 <= strategy.minimum_data_coverage <= 1:
+        raise ValueError("strategy.minimum_data_coverage必须在0到1之间")
+    if not 0 <= strategy.retention_ratio <= 1:
+        raise ValueError("strategy.retention_ratio必须在0到1之间")
+    if strategy.min_score > strategy.max_score:
+        raise ValueError("strategy.min_score不能大于max_score")
+    settings = AppSettings(
+        project_dir=project_dir,
         pool=resolve(paths.get("pool")),
         portfolio=resolve(paths.get("portfolio")),
         cache_dir=resolve(paths.get("cache_dir")),
@@ -78,12 +102,7 @@ def load_settings(path: Path) -> AppSettings:
         state_file=resolve(paths.get("state_file")),
         workers=int(runtime.get("workers", 8)),
         fixed_pool_only=bool(runtime.get("fixed_pool_only", False)),
-        strategy=StrategyConfig(
-            **{
-                field_name: strategy_raw.get(field_name, getattr(StrategyConfig(), field_name))
-                for field_name in StrategyConfig.__dataclass_fields__
-            }
-        ),
+        strategy=strategy,
         notification=NotificationSettings(
             enabled=bool(notification.get("enabled", False)),
             channels=list(notification.get("channels", [])),
@@ -96,3 +115,4 @@ def load_settings(path: Path) -> AppSettings:
             misfire_grace_time=int(schedule.get("misfire_grace_time", 300)),
         ),
     )
+    return settings

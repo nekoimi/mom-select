@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -34,7 +34,7 @@ LOG = logging.getLogger("mom-select-scheduler")
 def build_run_args(settings: AppSettings, *, debug: bool = False) -> SimpleNamespace:
     """Build the Namespace expected by ``mom_select.cli.run``."""
     return SimpleNamespace(
-        date=date.today(),
+        date=datetime.now(ZoneInfo(settings.schedule.timezone)).date(),
         mode="intraday",
         portfolio=settings.portfolio,
         pool=settings.pool or DEFAULT_POOL_FILE,

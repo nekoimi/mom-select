@@ -304,7 +304,8 @@ def run(args: argparse.Namespace):
             and histories[code]["date"].max().date() == args.date
             for code in codes
         )
-        if valid_snapshot_count / len(codes) < config.minimum_data_coverage:
+        coverage = valid_snapshot_count / len(codes) if codes else 0.0
+        if coverage < config.minimum_data_coverage:
             provider.warnings.add(
                 f"13:05有效快照仅{valid_snapshot_count}/{len(codes)}，低于安全覆盖率"
             )
