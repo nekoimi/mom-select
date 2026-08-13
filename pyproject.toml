@@ -32,11 +32,6 @@ packages = ["mom_select"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[[tool.uv.index]]
-name = "tsinghua"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
-
 [tool.ruff]
 exclude = ["original.py", "data", "reports"]
 line-length = 100
