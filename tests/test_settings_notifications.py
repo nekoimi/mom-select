@@ -1,4 +1,8 @@
-from mom_select.notifications import TelegramNotifier, build_notifiers
+from pathlib import Path
+
+import pytest
+
+from mom_select.notifications import TelegramNotifier, WeChatNotifier, build_notifiers
 from mom_select.settings import load_settings
 
 
@@ -22,3 +26,47 @@ def test_telegram_notifier_keeps_proxy():
 def test_build_notifiers_skips_incomplete_channels():
     settings = type("Settings", (), {"enabled": True, "channels": [{"type": "telegram"}]})()
     assert build_notifiers(settings) == []
+
+
+def test_wechat_notifier_checks_both_api_responses(tmp_path: Path, monkeypatch):
+    image = tmp_path / "report.png"
+    image.write_bytes(b"png")
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"errcode": 0, "errmsg": "ok"}
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs["json"]["msgtype"])
+        return Response()
+
+    monkeypatch.setattr("mom_select.notifications.requests.post", fake_post)
+
+    WeChatNotifier("https://example.invalid/hook").send(image, "subject", "text")
+
+    assert calls == ["text", "image"]
+
+
+def test_wechat_notifier_reports_api_error(tmp_path: Path, monkeypatch):
+    image = tmp_path / "report.png"
+    image.write_bytes(b"png")
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"errcode": 93000, "errmsg": "invalid webhook"}
+
+    monkeypatch.setattr("mom_select.notifications.requests.post", lambda *a, **k: Response())
+
+    with pytest.raises(RuntimeError, match="invalid webhook"):
+        WeChatNotifier("https://example.invalid/hook").send(image, "subject", "text")

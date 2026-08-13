@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +18,7 @@ import pandas as pd
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+LOG = logging.getLogger("mom-select.data")
 
 
 PRICE_COLUMNS = ["date", "open", "close", "high", "low", "volume", "turnover"]
@@ -817,6 +819,7 @@ class EastmoneyDataProvider:
                     frames[code] = future.result()
                 except Exception as exc:
                     failures[code] = str(exc)
+                    LOG.error("证券历史行情获取失败：code=%s", code, exc_info=exc)
         self._save_metadata()
         return frames, failures
 
@@ -865,6 +868,7 @@ class EastmoneyDataProvider:
                     frames[code] = future.result()
                 except Exception as exc:
                     failures[code] = str(exc)
+                    LOG.error("证券流动性行情获取失败：code=%s", code, exc_info=exc)
         self._save_metadata()
         return frames, failures
 

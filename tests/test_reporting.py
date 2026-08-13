@@ -36,6 +36,9 @@ def test_html_report_contains_core_sections_and_utf8_content() -> None:
     assert "25日趋势排名" in result
     assert "人工执行检查" in result
     assert "513360.XSHG" in result
+    assert "2026年8月12日 星期三" in result
+    assert 'class="regime-panel normal"' in result
+    assert 'class="market-table"' in result
 
 
 def test_html_report_shows_target_name_and_places_warnings_after_checklist() -> None:
@@ -67,6 +70,7 @@ def test_html_report_shows_target_name_and_places_warnings_after_checklist() -> 
 
     assert "沪深300ETF" in result
     assert "510300.XSHG" in result
+    assert "买入候选 · 沪深300ETF（510300.XSHG）" in result
     assert result.index("人工执行检查") < result.index("风险提示")
 
 

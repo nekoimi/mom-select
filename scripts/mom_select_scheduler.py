@@ -72,8 +72,22 @@ def run_scheduled(settings: AppSettings, *, debug: bool = False) -> None:
     except Exception:
         LOG.exception("ETF建议执行失败")
         return
-    LOG.info("报告生成完成：%s", paths.html)
-    for notifier in build_notifiers(settings.notification):
+    LOG.info(
+        "报告生成完成：html=%s image=%s image_size=%d字节",
+        paths.html,
+        paths.image,
+        paths.image.stat().st_size,
+    )
+    try:
+        notifiers = build_notifiers(settings.notification)
+    except Exception:
+        LOG.exception("消息通知配置解析失败")
+        return
+    if not notifiers:
+        LOG.info("本次没有可用通知渠道，报告生成流程结束")
+        return
+    LOG.info("准备发送消息通知：共%d个渠道", len(notifiers))
+    for notifier in notifiers:
         try:
             subject = f"ETF动量策略日报 {run_args.date.isoformat()}"
             text = f"报告：{paths.html}"
@@ -123,15 +137,36 @@ def main() -> None:
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        force=True,
     )
-    settings = load_settings(Path(args.config))
+    LOG.info("启动mom-select调度器：config=%s run_once=%s debug=%s", args.config, args.run_once, args.debug)
+    try:
+        settings = load_settings(Path(args.config))
+    except Exception:
+        LOG.exception("配置加载失败：%s", args.config)
+        raise SystemExit(1)
+    LOG.info(
+        "配置加载完成：timezone=%s schedule=%s %02d:%02d notifications=%s channels=%d",
+        settings.schedule.timezone,
+        settings.schedule.day_of_week,
+        settings.schedule.hour,
+        settings.schedule.minute,
+        settings.notification.enabled,
+        len(settings.notification.channels),
+    )
     if args.run_once:
         run_scheduled(settings, debug=args.debug)
         return
 
     scheduler = create_scheduler(settings)
-    LOG.info("已启动APScheduler：工作日13:05（Asia/Shanghai）")
+    LOG.info(
+        "已启动APScheduler：%s %02d:%02d（%s）",
+        settings.schedule.day_of_week,
+        settings.schedule.hour,
+        settings.schedule.minute,
+        settings.schedule.timezone,
+    )
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

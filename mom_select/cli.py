@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -30,6 +31,8 @@ from mom_select.universe import (
 )
 from mom_select.settings import load_settings
 
+
+LOG = logging.getLogger("mom-select.cli")
 
 def _parse_date(value: str) -> date:
     try:
@@ -376,6 +379,7 @@ def run(args: argparse.Namespace):
             )
         except Exception as exc:
             failures[code] = str(exc)
+            LOG.error("ETF指标计算失败：code=%s", code, exc_info=exc)
     transient_warning_prefixes = (
         "DEBUG模式使用当前最新行情快照",
         "历史DEBUG使用",

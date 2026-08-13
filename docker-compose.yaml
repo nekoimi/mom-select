@@ -12,6 +12,12 @@ services:
     environment:
       TZ: Asia/Shanghai
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      PYTHONUNBUFFERED: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     volumes:
       - ./config/config.yaml:/app/config/config.yaml:ro
       - ./config/portfolio.csv:/app/config/portfolio.csv:ro

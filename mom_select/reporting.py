@@ -10,6 +10,9 @@ from typing import NamedTuple
 from mom_select.models import AdviceReport, EtfMetrics
 
 
+KNOWN_ETF_NAMES = {"511880.XSHG": "银华日利ETF"}
+
+
 class ReportPaths(NamedTuple):
     markdown: Path
     json: Path
@@ -148,7 +151,6 @@ def _html_metric_checks(metric: EtfMetrics) -> str:
 def render_html(report: AdviceReport) -> str:
     regime_name = "走弱期" if report.market.regime == "weak" else "正常期"
     regime_class = "weak" if report.market.regime == "weak" else "normal"
-    target = ", ".join(report.targets) if report.targets else "无"
     target_names = {
         item.code: item.name
         for item in [*report.rankings, *report.eligible, *report.candidates]
@@ -156,6 +158,8 @@ def render_html(report: AdviceReport) -> str:
     target_names.update(
         {item.code: item.name for item in report.current_holdings if item.name}
     )
+    for code, name in KNOWN_ETF_NAMES.items():
+        target_names.setdefault(code, name)
     target_summary = (
         "<br>".join(
             f'<span class="target-name">{escape(target_names[code])}</span>'
@@ -166,6 +170,15 @@ def render_html(report: AdviceReport) -> str:
         )
         if report.targets
         else '<span class="target-name">无</span>'
+    )
+    target_detail = "、".join(
+        f"{target_names[code]}（{code}）" if target_names.get(code) else code
+        for code in report.targets
+    ) or "无"
+    weekdays = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+    report_date = (
+        f"{report.as_of.year}年{report.as_of.month}月{report.as_of.day}日 "
+        f"{weekdays[report.as_of.weekday()]}"
     )
     is_intraday = report.run_mode == "intraday"
     mode_name = (
@@ -259,7 +272,8 @@ def render_html(report: AdviceReport) -> str:
   header {{ padding:38px 48px 32px; color:#fff; background:#172126; border-bottom:6px solid var(--green); }}
   .brand-row {{ display:flex; align-items:center; justify-content:space-between; gap:24px; }}
   .brand {{ font:700 13px/1 Arial,sans-serif; letter-spacing:2px; color:#9fd4c1; }}
-  .date {{ color:#b9c3c7; font-size:13px; }}
+  .date {{ color:#b9c3c7; font-size:13px; text-align:right; }}
+  .date strong {{ display:block; margin-bottom:3px; color:#fff; font-size:15px; }}
   h1 {{ margin:17px 0 8px; font-size:34px; line-height:1.2; letter-spacing:0; }}
   header p {{ margin:0; color:#c9d1d4; font-size:14px; }}
     .summary {{ display:grid; grid-template-columns:1.25fr 1.1fr .8fr .8fr; border-bottom:1px solid var(--line); background:#f8faf9; }}
@@ -281,13 +295,17 @@ def render_html(report: AdviceReport) -> str:
   .section-note {{ max-width:600px; color:var(--muted); font-size:12px; text-align:right; }}
   .market-grid {{ display:grid; grid-template-columns:1.05fr 1.95fr; gap:28px; align-items:stretch; }}
   .market-grid > table {{ height:100%; }}
-  .regime-panel {{ height:100%; padding:24px; border-left:5px solid var(--green); background:var(--green-soft); }}
+  .regime-panel {{ display:flex; height:100%; padding:24px; flex-direction:column; align-items:center; justify-content:center; border-left:5px solid var(--green); background:var(--green-soft); text-align:center; }}
   .regime-panel.weak {{ border-color:var(--red); background:var(--red-soft); }}
   .regime-name {{ margin:4px 0 7px; font-size:28px; font-weight:800; }}
   .regime-panel p {{ margin:0; color:#405057; }}
   table {{ width:100%; border-collapse:collapse; table-layout:fixed; }}
   th {{ padding:9px 10px; color:#526168; background:#f2f5f5; border-bottom:1px solid #cad3d6; font-size:11px; text-align:left; white-space:nowrap; }}
   td {{ padding:10px; border-bottom:1px solid #e5eaec; vertical-align:middle; }}
+  table th:first-child,table td:first-child {{ padding-left:14px; }}
+  table th:last-child,table td:last-child {{ padding-right:14px; text-align:right; }}
+  .market-table th:not(:first-child),.market-table td:not(:first-child) {{ text-align:right; }}
+  .metrics-table th:not(:first-child):not(:nth-child(2)),.metrics-table td:not(:first-child):not(:nth-child(2)) {{ text-align:right; }}
   tbody tr:nth-child(even) {{ background:#fafbfb; }}
   tbody tr.leader {{ background:var(--green-soft); }}
   tbody tr.leader.secondary {{ background:#eef4f8; }}
@@ -299,10 +317,10 @@ def render_html(report: AdviceReport) -> str:
   .positive {{ color:var(--green); background:var(--green-soft); }}
   .negative {{ color:var(--red); background:var(--red-soft); }}
   .checks {{ white-space:nowrap; }}
-  .ranking-table th:first-child,.ranking-table td:first-child {{ padding-left:0; text-align:left; }}
+  .ranking-table th:first-child,.ranking-table td:first-child {{ padding-left:14px; text-align:left; }}
   .ranking-table th:nth-child(3),.ranking-table td:nth-child(3),.ranking-table th:nth-child(4),.ranking-table td:nth-child(4) {{ text-align:center; }}
-  .ranking-table th:last-child {{ padding-right:0; text-align:right; }}
-  .ranking-table td:last-child {{ padding-right:0; }}
+  .ranking-table th:last-child {{ padding-right:14px; text-align:right; }}
+  .ranking-table td:last-child {{ padding-right:14px; }}
   .ranking-table .checks {{ display:flex; justify-content:flex-end; align-items:center; gap:5px; }}
   .ranking-table .check {{ margin:2px 0; }}
   .check {{ display:inline-block; margin:2px 4px 2px 0; padding:2px 5px; font-size:10px; border:1px solid; }}
@@ -331,7 +349,7 @@ def render_html(report: AdviceReport) -> str:
 <body>
 <article class="report">
   <header>
-    <div class="brand-row"><span class="brand">MOM SELECT · ETF ROTATION</span><span class="date">{mode_name} · 数据时间 {escape(data_time)}</span></div>
+    <div class="brand-row"><span class="brand">MOM SELECT · ETF ROTATION</span><span class="date"><strong>{report_date}</strong>{mode_name} · 数据时间 {escape(data_time)}</span></div>
     <h1>ETF轮动策略简报</h1>
     <p>{subtitle}</p>
   </header>
@@ -346,16 +364,16 @@ def render_html(report: AdviceReport) -> str:
       <div class="section-head"><div class="section-title"><span class="section-index">01</span><h2>市场状态</h2></div><span class="section-note">{pool_note} · 至少3/4指数位于MA10下方进入走弱期，至少3/4位于上方恢复正常期</span></div>
       <div class="market-grid">
         <div class="regime-panel {regime_class}"><span class="label">当前状态</span><div class="regime-name">{regime_name}</div><p>{escape(report.market.explanation)}</p></div>
-        <table><thead><tr><th>指数</th><th>收盘</th><th>MA10</th><th>位置</th></tr></thead><tbody>{market_rows}</tbody></table>
+        <table class="market-table"><colgroup><col style="width:38%"><col style="width:19%"><col style="width:19%"><col style="width:24%"></colgroup><thead><tr><th>指数</th><th>收盘</th><th>MA10</th><th>位置</th></tr></thead><tbody>{market_rows}</tbody></table>
       </div>
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">02</span><h2>组合结论</h2></div><span class="section-note">目标由25日加权趋势、R²与风险过滤共同产生</span></div>
-      <div class="holdings"><ul class="holding-list">{holdings}</ul><div class="decision"><span class="label">策略说明</span><strong>{escape(report.action)} · {escape(target)}</strong><p>{escape(report.explanation)}</p></div></div>
+      <div class="holdings"><ul class="holding-list">{holdings}</ul><div class="decision"><span class="label">策略说明</span><strong>{escape(report.action)} · {escape(target_detail)}</strong><p>{escape(report.explanation)}</p></div></div>
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">03</span><h2>25日趋势排名</h2></div><span class="section-note">已通过动量、市场状态、量能、短期跌幅与流动性过滤</span></div>
-      <table><thead><tr><th style="width:5%">#</th><th style="width:29%">ETF</th><th style="width:13%;text-align:right">动量分</th><th style="width:13%;text-align:right">趋势年化</th><th style="width:11%;text-align:right">R²</th><th style="width:11%;text-align:right">{volume_label}</th><th style="width:18%;text-align:right">3日均成交额</th></tr></thead><tbody>{eligible_rows}</tbody></table>
+      <table class="metrics-table"><colgroup><col style="width:5%"><col style="width:29%"><col style="width:13%"><col style="width:13%"><col style="width:11%"><col style="width:11%"><col style="width:18%"></colgroup><thead><tr><th>#</th><th>ETF</th><th>动量分</th><th>趋势年化</th><th>R²</th><th>{volume_label}</th><th>3日均成交额</th></tr></thead><tbody>{eligible_rows}</tbody></table>
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">04</span><h2>全池动量前20</h2></div><span class="section-note">展示高动量但可能因过热、量能或短期下跌而未通过的标的</span></div>
