@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from mom_select.notifications import TelegramNotifier, build_notifiers
 from mom_select.settings import load_settings
 

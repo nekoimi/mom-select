@@ -30,7 +30,7 @@ Linux 长期运行可使用 Supervisor 托管内置调度器，详见 [`deploy/R
 
 生产部署推荐使用 Docker Compose：复制 `config/config.example.yaml` 为 `config/config.yaml`，复制 `.env.example` 为 `.env`，填写通知密钥后执行 `docker compose up -d`。镜像内已包含 Playwright Chromium、Linux 运行库和 `Noto Sans CJK` 中文字体，宿主机不需要安装浏览器。
 
-GitHub Actions 不会因推送分支或创建 Tag 自动发布镜像。提交 Pull Request 时会执行测试和依赖安全检查；需要构建并发布镜像时，在 Actions 页面手动运行 `Docker` workflow。Dependabot 每周检查 uv 项目依赖和 GitHub Actions 版本。
+GitHub Actions 不会因推送分支或创建 Tag 自动发布镜像。提交 Pull Request 时会执行 Ruff 静态检查和依赖安全检查；需要构建并发布镜像时，在 Actions 页面手动运行 `Docker` workflow。Dependabot 每周检查 uv 项目依赖和 GitHub Actions 版本。
 
 交易日13:05-13:10生成盘中建议（默认模式）：
 

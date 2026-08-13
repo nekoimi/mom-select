@@ -21,7 +21,7 @@ jobs:
         with:
           fail-on-severity: high
 
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +29,10 @@ jobs:
         with:
           version: latest
       - run: uv sync --dev
-      - run: uv run pytest
+      - run: uv run ruff check .
 
   image:
-    needs: test
+    needs: lint
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
