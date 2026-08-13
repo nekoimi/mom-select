@@ -9,7 +9,7 @@
 - 输出 Markdown、JSON、HTML 和 PNG 报告
 - 行情 CSV 缓存与离线复盘
 - 企业微信、Telegram、邮件图片通知
-- APScheduler 定时执行
+- APScheduler 定时执行，使用 AKShare 交易日历跳过周末和休市日
 
 ## 本地运行
 
@@ -100,7 +100,7 @@ uv run --frozen --no-sync
 
 ## 定时执行
 
-调度器使用 APScheduler，默认按 `Asia/Shanghai` 时区在工作日 13:05 执行，任务直接调用策略函数。Docker Compose 推荐用于生产环境；Supervisor 配置仍保留在 `deploy/supervisor/`。
+调度器使用 APScheduler，默认按 `Asia/Shanghai` 时区在工作日 13:05 触发。任务执行前使用 AKShare 中国交易日历确认当天开市；周末和法定休市日直接跳过。交易日历缓存在行情缓存目录的 `_trading_calendar.csv`，网络更新失败时使用本地缓存；没有可靠日历时任务会安全跳过。Docker Compose 推荐用于生产环境；Supervisor 配置仍保留在 `deploy/supervisor/`。
 
 立即生成 DEBUG 报告并测试消息通知：
 
@@ -116,11 +116,12 @@ docker compose run --rm mom-select \
   --config /app/config/config.yaml --run-once --debug
 ```
 
-通知标题会带 `[DEBUG]`，正文注明不作为正式交易信号。`--debug` 只能和 `--run-once` 一起使用，不会影响常驻定时任务。
+通知标题会带 `[DEBUG]`，正文注明不作为正式交易信号。`--debug` 只能和 `--run-once` 一起使用，不会影响常驻定时任务；为便于节假日排查通知链路，DEBUG 单次执行不受交易日历限制。
 
 ## 数据和限制
 
-- 默认使用东方财富公开接口，失败时回退到腾讯接口。
+- 历史日线默认使用东方财富，失败时依次回退到腾讯、Yahoo 和 AKShare；盘中快照使用腾讯行情。
+- AKShare 同时用于获取中国证券市场交易日历。
 - 公开接口可能限流或中断，长期实盘建议接入稳定的授权数据源。
 - 盘中模式只允许在交易日 13:05 附近运行。
 - 历史回放使用当前可见 ETF 清单，存在幸存者偏差。

@@ -441,6 +441,61 @@ class EastmoneyDataProvider:
         self.warnings.add("部分行情使用Yahoo备用日线，成交额为OHLC均价乘成交量的估算值")
         return pd.DataFrame(rows, columns=PRICE_COLUMNS).sort_values("date")
 
+    def _fetch_akshare(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """Fetch adjusted ETF daily bars through the optional AKShare adapter."""
+        try:
+            import akshare as ak
+        except ImportError as exc:
+            raise DataProviderError("未安装AKShare") from exc
+        raw_code, exchange = self._split_code(code)
+        errors: list[str] = []
+        try:
+            frame = ak.fund_etf_hist_em(
+                symbol=raw_code,
+                period="daily",
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+                adjust="qfq",
+            )
+        except Exception as exc:
+            errors.append(f"ETF日线: {exc}")
+            frame = pd.DataFrame()
+        if frame is None or frame.empty:
+            try:
+                symbol = f"{'sh' if exchange == 'XSHG' else 'sz'}{raw_code}"
+                frame = ak.stock_zh_index_daily_em(
+                    symbol=symbol,
+                    start_date=start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"),
+                )
+            except Exception as exc:
+                errors.append(f"指数日线: {exc}")
+                frame = pd.DataFrame()
+        if frame is None or frame.empty:
+            detail = "; ".join(errors) or "接口返回空数据"
+            raise DataProviderError(f"AKShare未返回日线: {detail}")
+        columns = {
+            "日期": "date",
+            "开盘": "open",
+            "收盘": "close",
+            "最高": "high",
+            "最低": "low",
+            "成交量": "volume",
+            "成交额": "turnover",
+            "amount": "turnover",
+        }
+        frame = frame.rename(columns=columns)
+        if not set(PRICE_COLUMNS).issubset(frame.columns):
+            raise DataProviderError("AKShare ETF日线字段不完整")
+        for column in PRICE_COLUMNS[1:]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        result = frame[PRICE_COLUMNS].dropna().sort_values("date")
+        if result.empty:
+            raise DataProviderError("AKShare未返回有效ETF日线")
+        self.warnings.add("部分行情使用AKShare ETF日线")
+        return result
+
     def _fetch_yahoo_intraday_snapshot(
         self, code: str, trading_date: date, cutoff: datetime
     ) -> tuple[pd.DataFrame, datetime]:
@@ -691,10 +746,13 @@ class EastmoneyDataProvider:
                 try:
                     return self._fetch_yahoo(code, start, end)
                 except DataProviderError as yahoo_error:
-                    raise DataProviderError(
-                        f"主数据源失败: {primary_error}; 腾讯失败: {fallback_error}; "
-                        f"Yahoo失败: {yahoo_error}"
-                    ) from yahoo_error
+                    try:
+                        return self._fetch_akshare(code, start, end)
+                    except DataProviderError as akshare_error:
+                        raise DataProviderError(
+                            f"主数据源失败: {primary_error}; 腾讯失败: {fallback_error}; "
+                            f"Yahoo失败: {yahoo_error}; AKShare失败: {akshare_error}"
+                        ) from akshare_error
 
     def history(self, code: str, start: date, end: date) -> pd.DataFrame:
         cached = self._read_cache(code)

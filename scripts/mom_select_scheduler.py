@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from mom_select.calendar import TradingCalendarError, is_trading_day
 from mom_select.cli import run
 from mom_select.config import (
     DEFAULT_CACHE_DIR,
@@ -55,6 +56,16 @@ def run_scheduled(settings: AppSettings, *, debug: bool = False) -> None:
     """Generate today's intraday report directly in this process."""
     run_args = build_run_args(settings, debug=debug)
     mode_label = "DEBUG" if debug else "正式"
+    if not debug:
+        calendar_path = (settings.cache_dir or DEFAULT_CACHE_DIR) / "_trading_calendar.csv"
+        try:
+            trading_day = is_trading_day(run_args.date, calendar_path)
+        except TradingCalendarError:
+            LOG.exception("交易日历不可用，为避免非交易日误执行，本次任务已跳过")
+            return
+        if not trading_day:
+            LOG.info("%s不是交易日，本次任务跳过", run_args.date.isoformat())
+            return
     LOG.info("开始执行ETF建议：%s（%s）", run_args.date.isoformat(), mode_label)
     try:
         paths = run(run_args)

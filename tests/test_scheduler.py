@@ -7,6 +7,7 @@ from scripts.mom_select_scheduler import (
     SHANGHAI,
     build_run_args,
     create_scheduler,
+    run_scheduled,
 )
 from mom_select.settings import AppSettings, ScheduleSettings
 
@@ -33,3 +34,18 @@ def test_scheduler_has_weekday_1305_trigger():
         None, datetime(2026, 8, 12, 12, 0, tzinfo=SHANGHAI)
     )
     assert next_fire == datetime(2026, 8, 12, 13, 5, tzinfo=SHANGHAI)
+
+
+def test_scheduled_run_skips_non_trading_day(monkeypatch):
+    called = False
+
+    def fake_run(args):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("scripts.mom_select_scheduler.is_trading_day", lambda *args: False)
+    monkeypatch.setattr("scripts.mom_select_scheduler.run", fake_run)
+
+    run_scheduled(AppSettings())
+
+    assert not called

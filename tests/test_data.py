@@ -125,6 +125,30 @@ def test_yahoo_history_maps_daily_bars(tmp_path: Path, monkeypatch) -> None:
     assert any("Yahoo备用日线" in warning for warning in provider.warnings)
 
 
+def test_akshare_history_maps_etf_daily_bars(tmp_path: Path, monkeypatch) -> None:
+    provider = EastmoneyDataProvider(tmp_path)
+    source = pd.DataFrame(
+        {
+            "日期": ["2026-08-11"],
+            "开盘": [1.0],
+            "收盘": [1.1],
+            "最高": [1.2],
+            "最低": [0.9],
+            "成交量": [1000],
+            "成交额": [1100],
+        }
+    )
+    monkeypatch.setattr("akshare.fund_etf_hist_em", lambda **kwargs: source)
+
+    result = provider._fetch_akshare(
+        "159768.XSHE", date(2026, 8, 11), date(2026, 8, 11)
+    )
+
+    assert result.iloc[0]["close"] == 1.1
+    assert result.iloc[0]["turnover"] == 1100
+    assert any("AKShare" in warning for warning in provider.warnings)
+
+
 def test_close_snapshot_uses_returned_price_precision(tmp_path: Path, monkeypatch) -> None:
     provider = EastmoneyDataProvider(tmp_path)
     payload = {
