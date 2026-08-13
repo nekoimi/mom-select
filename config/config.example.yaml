@@ -3,35 +3,70 @@ runtime:
   workers: 8
   fixed_pool_only: false
 
-schedule:
-  timezone: Asia/Shanghai
-  day_of_week: mon-fri
-  hour: 13
-  minute: 5
-  misfire_grace_time: 300
+tasks:
+  etf:
+    enabled: true
+    schedule:
+      timezone: Asia/Shanghai
+      day_of_week: mon-fri
+      hour: 13
+      minute: 5
+      misfire_grace_time: 300
+    paths:
+      pool: config/etf_pool.csv
+      portfolio: config/portfolio.csv
+      cache_dir: data/cache/etf
+      report_dir: reports/etf
+      state_file: data/state/etf/market_state.json
+    strategy:
+      lookback_days: 25
+      min_score: 0.0
+      max_score: 5.0
+      r2_threshold: 0.4
+      ma_lookback: 10
+      volume_lookback: 5
+      volume_threshold: 1.8
+      daily_loss_floor: 0.97
+      liquidity_lookback: 3
+      min_average_turnover: 10000000
+      holdings_num: 1
+      retention_ratio: 0.9
+      defensive_etf: 511880.XSHG
+      minimum_data_coverage: 0.8
 
-strategy:
-  lookback_days: 25
-  min_score: 0.0
-  max_score: 5.0
-  r2_threshold: 0.4
-  ma_lookback: 10
-  volume_lookback: 5
-  volume_threshold: 1.8
-  daily_loss_floor: 0.97
-  liquidity_lookback: 3
-  min_average_turnover: 10000000
-  holdings_num: 1
-  retention_ratio: 0.9
-  defensive_etf: 511880.XSHG
-  minimum_data_coverage: 0.8
-
-paths:
-  pool: config/etf_pool.csv
-  portfolio: config/portfolio.csv
-  cache_dir: data/cache
-  report_dir: reports
-  state_file: data/state/market_state.json
+  stock:
+    # Full-market stock scanning is opt-in because it creates substantially
+    # more public data-source requests than the ETF task.
+    enabled: false
+    schedule:
+      timezone: Asia/Shanghai
+      day_of_week: mon-fri
+      hour: 15
+      minute: 20
+      misfire_grace_time: 300
+    paths:
+      cache_dir: data/cache/stock
+      report_dir: reports/stock
+    strategy:
+      trend_windows: [20, 60, 120]
+      benchmark: 000300.XSHG
+      max_results: 20
+      minimum_momentum_score: 0.0
+      entry_candidate_results: 30
+      minimum_universe_size: 1000
+      minimum_listing_days: 250
+      liquidity_lookback: 20
+      minimum_average_turnover: 50000000
+      snapshot_minimum_turnover: 50000000
+      price_upper_bound_exclusive: 100
+      minimum_data_coverage: 0.8
+      max_atr_ratio: 0.12
+      entry_max_distance_ma20: 0.18
+      entry_min_return_20d: -0.03
+      entry_max_return_20d: 0.40
+      entry_min_r_squared: 0.30
+      entry_max_atr_ratio: 0.10
+      entry_max_drawdown_from_60d_high: 0.18
 
 notifications:
   enabled: false

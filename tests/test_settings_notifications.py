@@ -18,6 +18,36 @@ def test_yaml_settings_expand_environment(tmp_path, monkeypatch):
     assert settings.notification.channels[0]["webhook"] == "https://example.invalid/hook"
 
 
+def test_yaml_settings_loads_independent_stock_task(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "tasks:\n"
+        "  etf:\n"
+        "    enabled: false\n"
+        "  stock:\n"
+        "    enabled: true\n"
+        "    schedule:\n"
+        "      hour: 15\n"
+        "      minute: 30\n"
+        "    paths:\n"
+        "      cache_dir: data/stock-cache\n"
+        "    strategy:\n"
+        "      trend_windows: [20, 60, 120]\n"
+        "      price_upper_bound_exclusive: 80\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config)
+
+    assert not settings.etf_enabled
+    assert settings.stock.enabled
+    assert settings.stock.schedule.hour == 15
+    assert settings.stock.schedule.minute == 30
+    assert settings.stock.cache_dir == tmp_path / "data/stock-cache"
+    assert settings.stock.strategy.trend_windows == (20, 60, 120)
+    assert settings.stock.strategy.price_upper_bound_exclusive == 80
+
+
 def test_telegram_notifier_keeps_proxy():
     notifier = TelegramNotifier("token", "chat", "socks5://127.0.0.1:1080")
     assert notifier.proxy.startswith("socks5://")

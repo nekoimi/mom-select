@@ -13,17 +13,19 @@
 
 </div>
 
-`mom-select` 从聚宽策略中提取市场状态判断和 ETF 动量选择逻辑，使用公开行情生成 Markdown、JSON、HTML 和 PNG 报告。它只提供供人工复核的策略建议，**不连接证券账户，也不会自动下单**。
+`mom-select` 使用公开行情生成 ETF 动量轮动建议和 A 股趋势排名，并输出 Markdown、JSON、HTML 和 PNG 报告。它只提供供人工复核的策略结果，**不连接证券账户，也不会自动下单**。
 
 > [!IMPORTANT]
 > 本项目仅供策略研究和技术交流，不构成任何投资建议。使用者应自行核对公告、停牌、涨跌停、溢价率、申赎状态和实际成交条件，并独立承担决策风险。
 
 ## 功能特性
 
-- **双运行模式**：支持 13:05 盘中信号和收盘复盘。
+- **双业务模块**：ETF 轮动与个股趋势排名拥有独立的数据、策略、报告和调度流程。
+- **ETF 双运行模式**：支持 13:05 盘中信号和收盘复盘。
 - **市场状态判断**：根据四个市场指数与 MA10 的关系识别正常期和走弱期。
 - **动态 ETF 池**：结合固定池、全市场发现、流动性和产品名称规则构建候选池。
 - **动量排名**：计算 25 日加权趋势、年化收益和 R²，并执行量能、跌幅和流动性过滤。
+- **全市场个股排名**：从 A 股全市场动态筛选非创业板、非科创板、非 ST 且股价低于 100 元的股票，分别生成最多 20 只高动量标的和最多 30 只当前介入趋势候选；未达到条件时不凑数。
 - **多格式报告**：一次生成 Markdown、JSON、HTML 和 PNG，便于阅读和系统集成。
 - **多级数据回退**：历史日线按东方财富、腾讯、Yahoo、AKShare 的顺序回退。
 - **离线复盘**：行情按证券缓存为 CSV，可使用已有缓存重建历史结果。
@@ -37,13 +39,13 @@
 flowchart LR
     A[交易日历] --> B{当天开市?}
     B -- 否 --> C[跳过任务]
-    B -- 是 --> D[获取市场与 ETF 行情]
-    D --> E[判断市场状态]
-    E --> F[构建 ETF 候选池]
-    F --> G[动量排名与风险过滤]
-    G --> H[结合人工持仓生成建议]
-    H --> I[Markdown / JSON / HTML / PNG]
-    I --> J[企业微信 / Telegram / 邮件]
+    B -- 是 --> D[13:05 ETF 轮动]
+    B -- 是 --> E[15:20 个股趋势]
+    D --> F[ETF 动量与风险过滤]
+    E --> G[全市场预筛与趋势排名]
+    F --> H[Markdown / JSON / HTML / PNG]
+    G --> H
+    H --> I[企业微信 / Telegram / 邮件]
 ```
 
 ## 快速开始
@@ -109,9 +111,17 @@ uv run mom-select --portfolio config/portfolio.csv
 # 使用本地缓存复查历史收盘信号
 uv run mom-select --mode close --offline \
   --date 2026-08-11 --no-save-state
+
+# 收盘后生成当前交易日个股趋势排名
+uv run mom-select stock
+
+# 使用配置文件中的个股参数
+uv run mom-select stock --config config/config.yaml
 ```
 
-报告默认写入 `reports/`，行情缓存默认写入 `data/cache/`。持仓文件可以为空或只保留 CSV 表头，此时程序按空仓处理。
+ETF 报告和缓存按配置写入 `reports/etf/`、`data/cache/etf/`；个股默认写入 `reports/stock/`、`data/cache/stock/`。持仓文件可以为空或只保留 CSV 表头，此时 ETF 程序按空仓处理。
+
+个股模块会访问全市场公开接口，首次运行需要为通过预筛的股票建立前复权日线缓存，耗时和请求量明显高于 ETF。生产配置默认将 `tasks.stock.enabled` 设为 `false`，确认数据源可用后再显式启用。
 
 ## 配置说明
 
@@ -128,9 +138,8 @@ cp .env.example .env
 | 分组 | 用途 |
 |---|---|
 | `runtime` | 并发数、项目目录和是否仅使用固定 ETF 池 |
-| `schedule` | 时区、触发星期、小时、分钟和误触发宽限 |
-| `strategy` | 动量窗口、过滤阈值、持仓数和防御 ETF |
-| `paths` | ETF 池、持仓、缓存、报告和市场状态文件路径 |
+| `tasks.etf` | ETF 启停、13:05 调度、路径和动量策略参数 |
+| `tasks.stock` | 个股启停、15:20 调度、路径和趋势策略参数 |
 | `notifications` | 通知总开关和企业微信、Telegram、邮件渠道 |
 
 完整示例见 [`config/config.example.yaml`](config/config.example.yaml)。敏感字段使用环境变量引用：
@@ -165,9 +174,13 @@ WECHAT_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...
 | 历史日线 | 东方财富 | 腾讯 → Yahoo → AKShare |
 | 13:05 实时快照 | 腾讯 | 数据不足时降低覆盖率并将报告标为不可执行 |
 | 全市场 ETF 清单 | 东方财富 | 东方财富基金清单 → 本地缓存 |
+| 全市场 A 股快照 | AKShare / 腾讯接口 | 东方财富 → 新浪 → 同交易日本地缓存 |
+| 个股前复权日线 | AKShare / 腾讯接口 | 东方财富前复权日线 → 每只股票独立增量缓存 |
 | 中国交易日历 | AKShare | 本地日历缓存 |
 
-交易日历缓存在 `data/cache/_trading_calendar.csv`。网络更新失败时会使用本地缓存；网络和缓存均不可用，或日历尚未覆盖目标日期时，正式调度会安全跳过，避免在未知日期误发信号。
+交易日历缓存在 `data/cache/shared/trading_calendar.csv`。网络更新失败时会使用本地缓存；网络和缓存均不可用，或日历尚未覆盖目标日期时，正式调度会安全跳过，避免在未知日期误发信号。
+
+个股必要预筛使用最新有效的未复权价格判断 100 元门槛，趋势指标使用前复权日线。全市场清单低于完整性门槛时会终止任务，避免使用不完整证券列表生成正式排名。
 
 公开接口可能限流、变更或中断。长期生产使用建议接入稳定、合规的授权数据源。
 
@@ -192,7 +205,16 @@ Compose 使用 Docker `json-file` 日志驱动，单文件最大 10 MiB，最多
 
 ### APScheduler
 
-默认在 `Asia/Shanghai` 时区的周一至周五 13:05 触发，并在实际执行前检查中国交易日历。正式任务不会在休市日运行；`--run-once --debug` 不受交易日历限制，便于节假日排查报告和通知链路。
+ETF 默认在 `Asia/Shanghai` 时区的周一至周五 13:05 触发。启用个股任务后，它会在交易日 15:20 独立生成收盘排名。两个任务执行前都会检查中国交易日历，异常互不阻塞。
+
+手工调用调度任务：
+
+```bash
+python -m scripts.mom_select_scheduler --config config/config.yaml --run-once --task etf
+python -m scripts.mom_select_scheduler --config config/config.yaml --run-once --task stock
+```
+
+ETF 的 `--run-once --task etf --debug` 不受交易日历限制，便于节假日排查报告和通知链路；正式个股任务仍要求交易日和完整收盘数据。
 
 ### Supervisor
 
@@ -201,16 +223,14 @@ Compose 使用 Docker `json-file` 日志驱动，单文件最大 10 MiB，最多
 ## 项目结构
 
 ```text
-mom_select/                 核心业务代码
-  cli.py                    CLI 编排与运行入口
-  data.py                   行情适配、回退和缓存
-  calendar.py               中国交易日历
-  strategy.py               市场判断、指标与目标选择
-  universe.py               固定池和动态池构建
-  reporting.py              Markdown/JSON/HTML/PNG 报告
-  notifications.py          企业微信、Telegram 和邮件通知
+mom_select/
+  core/                     共享交易日历、通知、报告和数学能力
+  etf/                      ETF 数据、标的池、策略与报告边界
+  stock/                    个股全市场筛选、趋势排名与报告
+  cli.py                    兼容入口和 ETF/stock 子命令分发
+  settings.py               双业务 YAML 配置
 scripts/
-  mom_select_scheduler.py   APScheduler 常驻调度入口
+  mom_select_scheduler.py   ETF/个股 APScheduler 常驻调度入口
 config/                     配置、ETF 池和持仓示例
 deploy/                     Supervisor 部署文件
 tests/                      pytest 测试
@@ -246,6 +266,8 @@ Issue 和 Pull Request 都欢迎。提交修改前请：
 - 历史回放使用当前可见 ETF 清单，存在幸存者偏差。
 - 腾讯和 Yahoo 的部分日线不直接提供成交额，项目会使用 OHLC 均价乘成交量估算，并在报告中提示。
 - 盘中信号基于未完成交易日数据，收盘前价格和排名仍可能变化。
+- 个股全市场扫描依赖公开接口，首次建立历史缓存耗时较长，接口限流时可能导致数据覆盖不足。
+- 个股历史回放要求存在目标交易日的全市场快照缓存，不能用当前股票状态替代历史状态。
 - 本项目不检查所有公告、停牌、涨跌停、实时溢价和申赎限制，执行前必须人工核对。
 
 ## 许可证

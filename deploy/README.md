@@ -1,6 +1,6 @@
 # Linux + Supervisor 部署
 
-程序本身是一次性 CLI。`scripts/mom_select_scheduler.py` 使用 APScheduler 常驻调度，按上海时区在周一至周五 13:05 直接调用 `mom_select.cli.run()`；Supervisor 只负责保持调度器运行和收集日志。
+程序本身提供一次性 CLI。`scripts/mom_select_scheduler.py` 使用 APScheduler 常驻调度：ETF 默认在 13:05 运行，启用个股任务后在 15:20 独立运行；Supervisor 只负责保持调度器运行和收集日志。
 
 ## 安装
 
@@ -44,7 +44,7 @@ sudo supervisorctl status mom-select-scheduler
   --run-once
 ```
 
-正式调度不需要 cron。APScheduler 使用 `CronTrigger(day_of_week="mon-fri", hour=13, minute=5)`，并设置单实例、合并错过触发和 5 分钟误触发宽限。Supervisor 使用 `uv sync` 创建的 `/opt/mom-select/.venv/bin/python`，不会依赖全局 Python 或全局 uv。任务执行前使用 AKShare 中国交易日历确认当天开市，周末和法定休市日会直接跳过。
+正式调度不需要 cron。APScheduler 根据 `tasks.etf.schedule` 和 `tasks.stock.schedule` 分别注册任务，并设置单实例、合并错过触发和误触发宽限。Supervisor 使用 `uv sync` 创建的 `/opt/mom-select/.venv/bin/python`，不会依赖全局 Python 或全局 uv。任务执行前使用 AKShare 中国交易日历确认当天开市，周末和法定休市日会直接跳过。
 
 查看日志：
 
@@ -65,4 +65,12 @@ PNG 生成优先使用系统 Chrome/Edge；服务器没有系统浏览器时自�
 
 ```bash
 .venv/bin/python -m mom_select.cli --date 2026-08-11 --debug --no-save-state
+```
+
+个股排名只能在目标交易日收盘后在线运行；历史复查必须提前保留该日全市场快照缓存：
+
+```bash
+.venv/bin/python -m mom_select.cli stock --config config/config.yaml
+.venv/bin/python -m scripts.mom_select_scheduler \
+  --config config/config.yaml --run-once --task stock
 ```

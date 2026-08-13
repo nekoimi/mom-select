@@ -417,9 +417,17 @@ def run(args: argparse.Namespace):
     return write_reports(report, args.report_dir)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    if raw_args and raw_args[0] == "stock":
+        from mom_select.stock.cli import main as stock_main
+
+        stock_main(raw_args[1:])
+        return
+    if raw_args and raw_args[0] == "etf":
+        raw_args = raw_args[1:]
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(raw_args)
     if args.config:
         settings = load_settings(args.config)
         args.pool = settings.pool or args.pool

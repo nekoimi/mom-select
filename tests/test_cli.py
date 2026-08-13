@@ -8,6 +8,7 @@ import pytest
 from mom_select import cli
 from mom_select.cli import _append_snapshot, _intraday_volume_multiplier, build_parser
 from mom_select.config import DEFAULT_POOL_FILE
+from mom_select.config import DEFAULT_REPORT_DIR
 from mom_select.data import EastmoneyDataProvider, SnapshotBatch
 
 
@@ -19,6 +20,14 @@ def test_intraday_is_the_default_mode() -> None:
     args = build_parser().parse_args([])
     assert args.mode == "intraday"
     assert not args.debug
+
+
+def test_etf_default_report_directory_is_separate() -> None:
+    args = build_parser().parse_args([])
+
+    assert args.report_dir == DEFAULT_REPORT_DIR
+    assert args.report_dir.name == "etf"
+    assert args.report_dir.parent.name == "reports"
 
 
 def test_debug_flag_keeps_intraday_mode() -> None:
