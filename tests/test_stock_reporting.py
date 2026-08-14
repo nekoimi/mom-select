@@ -60,6 +60,7 @@ def test_stock_reports_show_ranking_and_never_emit_order_language() -> None:
     assert "--accent:#b44b3d" in html
     assert "#167c5a" not in html
     assert "自动下单" in html
+    assert "生成于 2026年08月13日 15:20:00（北京时间）" in html
     assert "买入候选" not in markdown
     assert "换仓" not in html
 

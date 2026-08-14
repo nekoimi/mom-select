@@ -5,6 +5,7 @@ from dataclasses import asdict
 from html import escape
 
 from mom_select.core.reporting import ReportPaths, render_html_to_png
+from mom_select.core.time import format_report_time
 from mom_select.stock.models import StockAdviceReport
 
 
@@ -189,7 +190,7 @@ def render_html(report: StockAdviceReport) -> str:
     </section>
     {f'<section class="notice"><div><span class="section-index">!</span><h2>风险提示</h2></div><ul>{warnings}</ul></section>' if warnings else ''}
   </main>
-  <footer><span>仅供策略研究与人工复核，不构成投资建议；系统不连接账户，也不会自动下单</span><span>生成时间 {escape(report.generated_at)}</span></footer>
+  <footer><span>仅供策略研究与人工复核，不构成投资建议；系统不连接账户，也不会自动下单</span><span>生成于 {escape(format_report_time(report.generated_at))}</span></footer>
 </article>
 </body>
 </html>"""

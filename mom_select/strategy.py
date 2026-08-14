@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from mom_select.core.time import report_generated_at
 from mom_select.models import (
     AdviceReport,
     EtfMetrics,
@@ -245,7 +246,7 @@ def build_report(
         action = f"调试：{action}"
         explanation = f"仅用于本地流程检查；{explanation}"
     return AdviceReport(
-        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        generated_at=report_generated_at(),
         as_of=as_of,
         market=market,
         pool_size=pool_size,

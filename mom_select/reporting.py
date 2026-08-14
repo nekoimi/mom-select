@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import NamedTuple
 
+from mom_select.core.time import format_report_time
 from mom_select.models import AdviceReport, EtfMetrics
 
 
@@ -385,7 +386,7 @@ def render_html(report: AdviceReport) -> str:
     </section>
     {warning_section}
   </main>
-  <footer><span>仅供策略研究与人工复核，不构成投资建议</span><span>生成时间 {escape(report.generated_at)}</span></footer>
+  <footer><span>仅供策略研究与人工复核，不构成投资建议</span><span>生成于 {escape(format_report_time(report.generated_at))}</span></footer>
 </article>
 </body>
 </html>"""

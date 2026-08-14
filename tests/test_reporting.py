@@ -37,6 +37,7 @@ def test_html_report_contains_core_sections_and_utf8_content() -> None:
     assert "人工执行检查" in result
     assert "513360.XSHG" in result
     assert "2026年8月12日 星期三" in result
+    assert "生成于 2026年08月12日 17:00:00（北京时间）" in result
     assert 'class="regime-panel normal"' in result
     assert 'class="market-table"' in result
 

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+from mom_select.core.time import report_generated_at
 from mom_select.data import EastmoneyDataProvider
 from mom_select.stock.data import AkshareStockDataProvider
 from mom_select.stock.models import StockAdviceReport, StockRunRequest
@@ -119,7 +120,7 @@ def run(request: StockRunRequest):
     if not all_rankings:
         warnings.append("没有股票完成趋势排名")
     report = StockAdviceReport(
-        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        generated_at=report_generated_at(),
         as_of=request.as_of,
         universe_size=len(universe),
         prefiltered_size=len(securities),
