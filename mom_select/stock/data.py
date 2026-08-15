@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from mom_select.data import DataProviderError, PRICE_COLUMNS
+from mom_select.data import DataProviderError, EastmoneyDataProvider, PRICE_COLUMNS
 
 
 LOG = logging.getLogger("mom-select.stock.data")
@@ -52,6 +52,9 @@ class AkshareStockDataProvider:
         self.universe_path = self.cache_dir / "universe.csv"
         self.history_dir = self.cache_dir / "history_qfq"
         self.history_dir.mkdir(parents=True, exist_ok=True)
+        self._bounded_history_provider = EastmoneyDataProvider(
+            self.cache_dir, workers=1, retries=1
+        )
         self.warnings: list[str] = []
 
     @staticmethod
@@ -171,10 +174,19 @@ class AkshareStockDataProvider:
         raise DataProviderError("所有全市场A股快照源均失败: " + "; ".join(errors))
 
     def stock_universe(self, as_of: date) -> pd.DataFrame:
+        today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
         if self.offline:
             return self._read_universe_cache(as_of)
-        if as_of != datetime.now(ZoneInfo("Asia/Shanghai")).date():
-            raise DataProviderError("在线全市场快照只能用于当前日期，历史日期请使用同日缓存")
+        if as_of < today:
+            try:
+                return self._read_universe_cache(as_of)
+            except DataProviderError as exc:
+                raise DataProviderError(
+                    f"历史日期{as_of.isoformat()}缺少同日全市场快照；"
+                    "公开接口只能补个股和基准历史行情，不能还原历史全市场快照"
+                ) from exc
+        if as_of > today:
+            raise DataProviderError("全市场快照日期不能晚于当前日期")
         try:
             frame, source_name, failed_sources = self._fetch_universe(as_of)
             frame.to_csv(self.universe_path, index=False)
@@ -237,8 +249,13 @@ class AkshareStockDataProvider:
         path = self._history_path(code)
         if not path.exists():
             return pd.DataFrame(columns=PRICE_COLUMNS)
-        frame = pd.read_csv(path, parse_dates=["date"])
+        try:
+            frame = pd.read_csv(path, parse_dates=["date"])
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            self.warnings.append(f"{code}前复权日线缓存损坏，按无缓存处理: {exc}")
+            return pd.DataFrame(columns=PRICE_COLUMNS)
         if not set(PRICE_COLUMNS).issubset(frame.columns):
+            self.warnings.append(f"{code}前复权日线缓存字段不完整，按无缓存处理")
             return pd.DataFrame(columns=PRICE_COLUMNS)
         return frame.loc[
             (frame["date"].dt.date >= start) & (frame["date"].dt.date <= end),
@@ -249,7 +266,7 @@ class AkshareStockDataProvider:
         cached = self._read_history(code, start, end)
         if self.offline:
             return cached
-        if not cached.empty and len(cached) >= 250 and cached["date"].max().date() >= end:
+        if not cached.empty and cached["date"].max().date() >= end:
             return cached
         raw_code = code.split(".", 1)[0]
         fetch_start = start
@@ -257,33 +274,27 @@ class AkshareStockDataProvider:
             fetch_start = cached["date"].max().date() + timedelta(days=1)
         errors: list[str] = []
         frame = pd.DataFrame(columns=PRICE_COLUMNS)
-        if not code.endswith(".XBSE"):
-            symbol = f"{'sh' if code.endswith('.XSHG') else 'sz'}{raw_code}"
+        try:
+            source = self._akshare().stock_zh_a_hist(
+                symbol=raw_code,
+                period="daily",
+                start_date=fetch_start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+                adjust="qfq",
+                timeout=15,
+            )
+            frame = self._normalize_history(source, "东方财富")
+        except Exception as exc:
+            errors.append(f"东方财富: {exc}")
+        if frame.empty and not code.endswith(".XBSE"):
             try:
-                source = self._akshare().stock_zh_a_hist_tx(
-                    symbol=symbol,
-                    start_date=fetch_start.strftime("%Y%m%d"),
-                    end_date=end.strftime("%Y%m%d"),
-                    adjust="qfq",
-                    timeout=15,
+                frame = self._bounded_history_provider.tencent_qfq_history(
+                    code, fetch_start, end
                 )
-                frame = self._normalize_history(source, "腾讯")
+                if errors:
+                    self.warnings.append(f"{code}前复权日线已回退到腾讯")
             except Exception as exc:
                 errors.append(f"腾讯: {exc}")
-        if frame.empty:
-            try:
-                source = self._akshare().stock_zh_a_hist(
-                    symbol=raw_code,
-                    period="daily",
-                    start_date=fetch_start.strftime("%Y%m%d"),
-                    end_date=end.strftime("%Y%m%d"),
-                    adjust="qfq",
-                )
-                frame = self._normalize_history(source, "东方财富")
-                if errors:
-                    self.warnings.append(f"{code}前复权日线已回退到东方财富")
-            except Exception as exc:
-                errors.append(f"东方财富: {exc}")
         if frame.empty and errors:
             detail = "; ".join(errors)
             if not cached.empty:

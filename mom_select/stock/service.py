@@ -73,6 +73,15 @@ def run(request: StockRunRequest):
         raise RuntimeError("全市场A股没有股票通过必要筛选条件")
 
     start = request.as_of - timedelta(days=max(int(config.minimum_listing_days * 1.8), 540))
+    benchmark_cache = request.cache_dir / "benchmark"
+    benchmark_provider = EastmoneyDataProvider(
+        benchmark_cache, offline=request.offline, workers=1
+    )
+    benchmark = benchmark_provider.history(config.benchmark, start, request.as_of)
+    if benchmark.empty or benchmark["date"].max().date() != request.as_of:
+        latest = "无数据" if benchmark.empty else benchmark["date"].max().date().isoformat()
+        raise RuntimeError(f"个股排名基准指数未覆盖{request.as_of}: 最新为{latest}")
+
     histories, failures = provider.histories(
         [security.code for security in securities], start, request.as_of
     )
@@ -85,15 +94,6 @@ def run(request: StockRunRequest):
         frame = histories.pop(code)
         latest = "无数据" if frame.empty else frame["date"].max().date().isoformat()
         failures[code] = f"前复权日线未覆盖目标交易日，最新为{latest}"
-    benchmark_cache = request.cache_dir / "benchmark"
-    benchmark_provider = EastmoneyDataProvider(
-        benchmark_cache, offline=request.offline, workers=1
-    )
-    benchmark = benchmark_provider.history(config.benchmark, start, request.as_of)
-    if benchmark.empty or benchmark["date"].max().date() != request.as_of:
-        latest = "无数据" if benchmark.empty else benchmark["date"].max().date().isoformat()
-        raise RuntimeError(f"个股排名基准指数未覆盖{request.as_of}: 最新为{latest}")
-
     all_rankings, metric_exclusions, metric_counts = rank_stocks(
         securities, histories, benchmark, config
     )

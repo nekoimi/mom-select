@@ -390,6 +390,10 @@ class EastmoneyDataProvider:
         self.warnings.add("部分行情使用腾讯备用日线，成交额为OHLC均价乘成交量的估算值")
         return frame[PRICE_COLUMNS].dropna().sort_values("date")
 
+    def tencent_qfq_history(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """Fetch Tencent qfq bars through the provider's bounded HTTP client."""
+        return self._fetch_tencent(code, start, end)
+
     def _fetch_yahoo(self, code: str, start: date, end: date) -> pd.DataFrame:
         """Fetch daily bars from Yahoo Finance as a last-resort public source."""
         raw_code, exchange = self._split_code(code)

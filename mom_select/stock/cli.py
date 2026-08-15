@@ -24,7 +24,11 @@ def build_parser(prog: str = "mom-select stock") -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, help="YAML配置文件")
     parser.add_argument("--cache-dir", type=Path, default=Path("data/cache/stock"))
     parser.add_argument("--report-dir", type=Path, default=Path("reports/stock"))
-    parser.add_argument("--offline", action="store_true", help="只使用当日清单和历史行情缓存")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="只使用目标日期全市场快照和历史行情缓存，不联网补数",
+    )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--allow-incomplete-day", action="store_true", help="允许15:10前运行，仅用于数据检查"
@@ -43,11 +47,8 @@ def main(argv: list[str] | None = None) -> None:
         args.workers = settings.workers
         strategy = stock.strategy
     now = datetime.now().astimezone()
-    if args.date != now.date() and not args.offline:
-        print(
-            "生成个股排名失败：历史日期必须使用--offline及该日期的全市场快照缓存",
-            file=sys.stderr,
-        )
+    if args.date > now.date():
+        print("生成个股排名失败：行情日期不能晚于当前日期", file=sys.stderr)
         raise SystemExit(1)
     if args.date == now.date() and now.time() < time(15, 10) and not args.allow_incomplete_day:
         print("生成个股排名失败：当日尚未到15:10，收盘行情可能未完成", file=sys.stderr)
