@@ -312,6 +312,44 @@ def test_history_uses_sufficient_cache_when_calendar_start_is_missing(
     assert any("未覆盖请求起始日" in warning for warning in provider.warnings)
 
 
+def test_history_refetches_short_cache_for_full_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    provider = EastmoneyDataProvider(tmp_path)
+    cached_dates = pd.bdate_range("2026-07-07", "2026-08-11")
+    cached = pd.DataFrame(
+        {
+            "date": cached_dates,
+            "open": 1.0,
+            "close": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "volume": 100.0,
+            "turnover": 100.0,
+        }
+    )
+    cached.to_csv(tmp_path / "510300.XSHG.csv", index=False)
+    fetched = cached.copy()
+    fetched.loc[len(fetched)] = [pd.Timestamp("2026-01-05"), 1, 1, 1, 1, 100, 100]
+    calls = []
+
+    def fetch(code, start, end):
+        calls.append((start, end))
+        return fetched
+
+    monkeypatch.setattr(provider, "_fetch", fetch)
+
+    result = provider.history(
+        "510300.XSHG",
+        date(2026, 1, 1),
+        date(2026, 8, 11),
+        full_window=True,
+    )
+
+    assert calls == [(date(2026, 1, 1), date(2026, 8, 11))]
+    assert result.iloc[0]["date"].date() == date(2026, 1, 5)
+
+
 def test_history_returns_current_short_cache_when_refetch_fails(
     tmp_path: Path, monkeypatch
 ) -> None:

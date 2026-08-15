@@ -35,10 +35,12 @@ class SnapshotBatch:
 
 
 class DataProvider(Protocol):
-    def history(self, code: str, start: date, end: date) -> pd.DataFrame: ...
+    def history(
+        self, code: str, start: date, end: date, full_window: bool = False
+    ) -> pd.DataFrame: ...
 
     def histories(
-        self, codes: list[str], start: date, end: date
+        self, codes: list[str], start: date, end: date, full_window: bool = False
     ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]: ...
 
     def security_name(self, code: str) -> str: ...
@@ -756,7 +758,9 @@ class EastmoneyDataProvider:
                             f"Yahoo失败: {yahoo_error}; AKShare失败: {akshare_error}"
                         ) from akshare_error
 
-    def history(self, code: str, start: date, end: date) -> pd.DataFrame:
+    def history(
+        self, code: str, start: date, end: date, full_window: bool = False
+    ) -> pd.DataFrame:
         cached = self._read_cache(code)
         if self.offline:
             if cached.empty:
@@ -776,7 +780,11 @@ class EastmoneyDataProvider:
                 # enough sessions and reaches ``end``, a missing earlier
                 # calendar date is harmless and should not trigger a network
                 # request (particularly important for historical debug runs).
-                if cached_last >= end and len(cached_window) >= MIN_HISTORY_ROWS:
+                cache_covers_start = cached_first <= start + timedelta(days=7)
+                has_required_cache = (
+                    cache_covers_start if full_window else len(cached_window) >= MIN_HISTORY_ROWS
+                )
+                if cached_last >= end and has_required_cache:
                     if cached_first > start:
                         self.warnings.add(
                             "部分本地缓存未覆盖请求起始日，但已有足够交易日，继续使用缓存"
@@ -807,12 +815,15 @@ class EastmoneyDataProvider:
         return combined.loc[mask].reset_index(drop=True)
 
     def histories(
-        self, codes: list[str], start: date, end: date
+        self, codes: list[str], start: date, end: date, full_window: bool = False
     ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
         frames: dict[str, pd.DataFrame] = {}
         failures: dict[str, str] = {}
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {executor.submit(self.history, code, start, end): code for code in codes}
+            futures = {
+                executor.submit(self.history, code, start, end, full_window): code
+                for code in codes
+            }
             for future in as_completed(futures):
                 code = futures[future]
                 try:

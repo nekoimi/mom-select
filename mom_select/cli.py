@@ -426,6 +426,11 @@ def main(argv: list[str] | None = None) -> None:
         return
     if raw_args and raw_args[0] == "etf":
         raw_args = raw_args[1:]
+    if raw_args and raw_args[0] == "backtest":
+        from mom_select.etf.backtest import main as backtest_main
+
+        backtest_main(raw_args[1:])
+        return
     parser = build_parser()
     args = parser.parse_args(raw_args)
     if args.config:
