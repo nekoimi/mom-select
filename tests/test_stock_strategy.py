@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 
@@ -36,6 +38,9 @@ def test_stock_metrics_include_multi_period_trend_and_relative_strength() -> Non
     assert metric.relative_strength_60d > 0
     assert metric.r_squared > 0.99
     assert metric.ma_aligned
+    assert metric.return_5d > 0
+    assert metric.ma5_slope > 0
+    assert metric.above_ma5
 
 
 def test_rank_stocks_does_not_truncate_before_coverage_count() -> None:
@@ -58,6 +63,15 @@ def test_stock_default_report_limits_are_twenty_and_thirty() -> None:
     assert config.max_results == 20
     assert config.minimum_momentum_score == 0
     assert config.entry_candidate_results == 30
+    assert config.price_lower_bound_inclusive == 5
+    assert config.price_upper_bound_inclusive == 55
+    assert config.screen_minimum_turnover == 300_000_000
+    assert config.snapshot_minimum_change == 0.01
+    assert config.snapshot_maximum_change == 0.10
+    assert config.snapshot_minimum_turnover_rate == 0.03
+    assert config.snapshot_maximum_turnover_rate == 0.15
+    assert config.trend_minimum_return_20d == 0.10
+    assert config.trend_minimum_return_60d == 0.20
 
 
 def test_momentum_ranking_uses_score_floor_and_maximum_limit() -> None:
@@ -93,23 +107,68 @@ def test_insufficient_listing_history_is_grouped_into_one_reason() -> None:
     assert counts == {"上市交易日不足250日": 1}
 
 
-def test_entry_candidates_reject_overheated_trends() -> None:
+def test_entry_candidates_require_ma_alignment_and_strict_return_floors() -> None:
     config = StockStrategyConfig()
-    steady = calculate_stock_metrics(
-        StockSecurity("600001.XSHG", "稳健趋势", "沪深主板", 40.0, 1e8),
-        _history(0.002),
+    qualifying = calculate_stock_metrics(
+        StockSecurity("600001.XSHG", "趋势候选", "沪深主板", 40.0, 4e8),
+        _history(0.006),
         _history(0.001),
         config,
     )
-    overheated = calculate_stock_metrics(
-        StockSecurity("600002.XSHG", "过热趋势", "沪深主板", 80.0, 1e8),
-        _history(0.02),
+    return_20d_boundary = replace(qualifying, code="600002.XSHG", return_20d=0.10)
+    return_60d_boundary = replace(qualifying, code="600003.XSHG", return_60d=0.20)
+    averages_not_aligned = replace(qualifying, code="600004.XSHG", ma_aligned=False)
+
+    result = select_entry_candidates(
+        [return_20d_boundary, return_60d_boundary, averages_not_aligned, qualifying],
+        config,
+    )
+
+    assert qualifying.return_20d > 0.10
+    assert qualifying.return_60d > 0.20
+    assert [item.code for item in result] == [qualifying.code]
+
+
+def test_entry_candidates_do_not_apply_hidden_short_term_filters() -> None:
+    config = StockStrategyConfig()
+    metric = calculate_stock_metrics(
+        StockSecurity("600001.XSHG", "中期趋势", "沪深主板", 40.0, 4e8),
+        _history(0.006),
+        _history(0.001),
+        config,
+    )
+    recently_falling = replace(
+        metric,
+        return_5d=-0.04,
+        ma5_slope=-0.01,
+        above_ma5=False,
+        volume_ratio=0.5,
+    )
+
+    assert select_entry_candidates([recently_falling], config) == [recently_falling]
+
+
+def test_entry_score_does_not_reward_a_fresh_high_over_a_modest_pullback() -> None:
+    config = StockStrategyConfig()
+    high_history = _history(0.002)
+    pullback_history = high_history.copy()
+    pullback_history.loc[pullback_history.index[-1], "close"] *= 0.96
+    pullback_history.loc[pullback_history.index[-1], "open"] *= 0.96
+    pullback_history.loc[pullback_history.index[-1], "high"] *= 0.96
+    pullback_history.loc[pullback_history.index[-1], "low"] *= 0.96
+    high_metric = calculate_stock_metrics(
+        StockSecurity("600001.XSHG", "创新高", "沪深主板", 40.0, 1e8),
+        high_history,
+        _history(0.001),
+        config,
+    )
+    pullback_metric = calculate_stock_metrics(
+        StockSecurity("600002.XSHG", "温和回撤", "沪深主板", 40.0, 1e8),
+        pullback_history,
         _history(0.001),
         config,
     )
 
-    result = select_entry_candidates([overheated, steady], config)
-
-    assert [item.code for item in result] == [steady.code]
-    assert steady.entry_score > 0
-    assert overheated.return_20d > config.entry_max_return_20d
+    assert high_metric.drawdown_from_60d_high == 0
+    assert pullback_metric.drawdown_from_60d_high < 0
+    assert pullback_metric.entry_score > high_metric.entry_score

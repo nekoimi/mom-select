@@ -23,6 +23,9 @@ def _report() -> StockAdviceReport:
         distance_ma20=0.03,
         drawdown_from_60d_high=-0.02,
         entry_score=82.0,
+        change_pct=0.035,
+        turnover_rate=0.08,
+        snapshot_turnover=500_000_000,
     )
     return StockAdviceReport(
         generated_at="2026-08-13T15:20:00+08:00",
@@ -55,7 +58,9 @@ def test_stock_reports_show_ranking_and_never_emit_order_language() -> None:
     assert "最多30只，本次1只" in markdown
     assert "最多20只，本次1只" in markdown
     assert "入场分" in html
-    assert "距MA20" in html
+    assert "今日涨幅" in html
+    assert "换手率" in html
+    assert "5.00亿" in html
     assert 'class="section-index">01' in html
     assert "--accent:#b44b3d" in html
     assert "#167c5a" not in html

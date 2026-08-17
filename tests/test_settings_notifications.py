@@ -33,7 +33,7 @@ def test_yaml_settings_loads_independent_stock_task(tmp_path):
         "      cache_dir: data/stock-cache\n"
         "    strategy:\n"
         "      trend_windows: [20, 60, 120]\n"
-        "      price_upper_bound_exclusive: 80\n",
+        "      price_upper_bound_inclusive: 50\n",
         encoding="utf-8",
     )
 
@@ -45,7 +45,7 @@ def test_yaml_settings_loads_independent_stock_task(tmp_path):
     assert settings.stock.schedule.minute == 30
     assert settings.stock.cache_dir == tmp_path / "data/stock-cache"
     assert settings.stock.strategy.trend_windows == (20, 60, 120)
-    assert settings.stock.strategy.price_upper_bound_exclusive == 80
+    assert settings.stock.strategy.price_upper_bound_inclusive == 50
 
 
 def test_telegram_notifier_keeps_proxy():

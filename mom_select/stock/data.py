@@ -15,7 +15,17 @@ from mom_select.data import DataProviderError, EastmoneyDataProvider, PRICE_COLU
 
 
 LOG = logging.getLogger("mom-select.stock.data")
-UNIVERSE_COLUMNS = ["code", "name", "board", "price", "turnover", "trade_status", "quote_date"]
+UNIVERSE_COLUMNS = [
+    "code",
+    "name",
+    "board",
+    "price",
+    "change_pct",
+    "turnover",
+    "turnover_rate",
+    "trade_status",
+    "quote_date",
+]
 
 
 class _RequestGate:
@@ -148,23 +158,36 @@ class AkshareStockDataProvider:
                 "code": "raw_code",
                 "name": "name",
                 "zxj": "price",
+                "zdf": "change_pct",
                 "turnover": "turnover",
+                "hsl": "turnover_rate",
                 "state": "trade_status",
             }
             # Tencent returns zxj in yuan and turnover in ten-thousand yuan.
             price_scale = 1.0
+            percentage_scale = 0.01
             turnover_scale = 10_000.0
         else:
             rename = {
                 "代码": "raw_code",
                 "名称": "name",
                 "最新价": "price",
+                "涨跌幅": "change_pct",
                 "成交额": "turnover",
+                "换手率": "turnover_rate",
             }
             price_scale = 1.0
+            percentage_scale = 0.01
             turnover_scale = 1.0
         normalized = source.rename(columns=rename)
-        required = {"raw_code", "name", "price", "turnover"}
+        required = {
+            "raw_code",
+            "name",
+            "price",
+            "change_pct",
+            "turnover",
+            "turnover_rate",
+        }
         if not required.issubset(normalized.columns):
             missing = ", ".join(sorted(required - set(normalized.columns)))
             raise DataProviderError(f"{source_name}全市场A股快照缺少字段: {missing}")
@@ -179,7 +202,9 @@ class AkshareStockDataProvider:
                 continue
             name = str(row.get("name") or raw_code).strip()
             price = pd.to_numeric(row.get("price"), errors="coerce")
+            change_pct = pd.to_numeric(row.get("change_pct"), errors="coerce")
             turnover = pd.to_numeric(row.get("turnover"), errors="coerce")
+            turnover_rate = pd.to_numeric(row.get("turnover_rate"), errors="coerce")
             board = (
                 "创业板" if raw_code.startswith(("300", "301"))
                 else "科创板" if raw_code.startswith(("688", "689"))
@@ -192,9 +217,19 @@ class AkshareStockDataProvider:
                     "name": name,
                     "board": board,
                     "price": float(price) * price_scale if pd.notna(price) else float("nan"),
+                    "change_pct": (
+                        float(change_pct) * percentage_scale
+                        if pd.notna(change_pct)
+                        else float("nan")
+                    ),
                     "turnover": (
                         float(turnover) * turnover_scale
                         if pd.notna(turnover)
+                        else float("nan")
+                    ),
+                    "turnover_rate": (
+                        float(turnover_rate) * percentage_scale
+                        if pd.notna(turnover_rate)
                         else float("nan")
                     ),
                     "trade_status": str(row.get("trade_status") or "正常").strip(),

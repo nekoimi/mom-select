@@ -131,21 +131,35 @@ def load_settings(path: Path) -> AppSettings:
         or stock_strategy.minimum_listing_days < 1
     ):
         raise ValueError("个股排名数量和上市时间门槛必须为正整数")
-    if stock_strategy.price_upper_bound_exclusive <= 0:
-        raise ValueError("个股价格上限必须为正数")
-    if stock_strategy.snapshot_minimum_turnover < 0:
-        raise ValueError("个股快照成交额门槛不能为负数")
+    if (
+        stock_strategy.price_lower_bound_inclusive <= 0
+        or stock_strategy.price_lower_bound_inclusive
+        > stock_strategy.price_upper_bound_inclusive
+    ):
+        raise ValueError("个股价格范围无效")
+    if stock_strategy.screen_minimum_turnover < 0:
+        raise ValueError("个股成交额门槛不能为负数")
+    if not (
+        -1 < stock_strategy.snapshot_minimum_change
+        <= stock_strategy.snapshot_maximum_change
+    ):
+        raise ValueError("个股今日涨幅范围无效")
+    if not (
+        0 <= stock_strategy.snapshot_minimum_turnover_rate
+        <= stock_strategy.snapshot_maximum_turnover_rate
+    ):
+        raise ValueError("个股换手率范围无效")
     if (
         stock_strategy.entry_max_distance_ma20 <= 0
         or stock_strategy.entry_max_return_20d <= 0
-        or stock_strategy.entry_max_atr_ratio <= 0
         or stock_strategy.entry_max_drawdown_from_60d_high <= 0
     ):
         raise ValueError("个股介入候选阈值必须为正数")
-    if stock_strategy.entry_min_return_20d > stock_strategy.entry_max_return_20d:
-        raise ValueError("个股介入候选20日收益下限不能高于上限")
-    if not 0 <= stock_strategy.entry_min_r_squared <= 1:
-        raise ValueError("个股介入候选R²门槛必须在0到1之间")
+    if (
+        stock_strategy.trend_minimum_return_20d <= -1
+        or stock_strategy.trend_minimum_return_60d <= -1
+    ):
+        raise ValueError("个股趋势收益门槛必须大于-100%")
     if not 0 <= stock_strategy.minimum_data_coverage <= 1:
         raise ValueError("个股最低数据覆盖率必须在0到1之间")
     stock_paths = stock_task.get("paths", {})

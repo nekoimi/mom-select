@@ -21,18 +21,19 @@ def render_markdown(report: StockAdviceReport) -> str:
         f"## 适合当前介入的趋势候选（最多{report.entry_candidate_limit}只，"
         f"本次{len(report.entry_candidates)}只）",
         "",
-        "| # | 股票 | 入场分 | 距MA20 | 20日 | 60日超额 | R² | ATR | 距60日高点 |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| # | 股票 | 现价 | 今日涨幅 | 成交额 | 换手率 | 20日 | 60日 | 均线 | 入场分 |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for index, item in enumerate(report.entry_candidates, 1):
         lines.append(
-            f"| {index} | {item.name} `{item.code}` | {item.entry_score:.2f} | "
-            f"{item.distance_ma20:.2%} | {item.return_20d:.2%} | "
-            f"{item.relative_strength_60d:.2%} | {item.r_squared:.3f} | "
-            f"{item.atr_ratio:.2%} | {item.drawdown_from_60d_high:.2%} |"
+            f"| {index} | {item.name} `{item.code}` | {item.close:.2f} | "
+            f"{item.change_pct:.2%} | {item.snapshot_turnover / 100_000_000:.2f}亿 | "
+            f"{item.turnover_rate:.2%} | {item.return_20d:.2%} | "
+            f"{item.return_60d:.2%} | {'多头' if item.ma_aligned else '未形成'} | "
+            f"{item.entry_score:.2f} |"
         )
     if not report.entry_candidates:
-        lines.append("| - | 无标的通过当前介入条件 | - | - | - | - | - | - | - |")
+        lines.append("| - | 无标的通过当前介入条件 | - | - | - | - | - | - | - | - |")
     lines.extend(
         [
             "",
@@ -86,13 +87,13 @@ def render_html(report: StockAdviceReport) -> str:
         f'<td class="rank">{index}</td>'
         f"<td><strong>{escape(item.name)}</strong><small>{escape(item.code)}</small></td>"
         f'<td class="number">{item.close:.2f}</td>'
-        f'<td class="number entry-score">{item.entry_score:.2f}</td>'
-        f'<td class="number">{item.distance_ma20:.2%}</td>'
+        f'<td class="number">{item.change_pct:.2%}</td>'
+        f'<td class="number">{item.snapshot_turnover / 100_000_000:.2f}亿</td>'
+        f'<td class="number">{item.turnover_rate:.2%}</td>'
         f'<td class="number">{item.return_20d:.2%}</td>'
-        f'<td class="number">{item.relative_strength_60d:.2%}</td>'
-        f'<td class="number">{item.r_squared:.3f}</td>'
-        f'<td class="number">{item.atr_ratio:.2%}</td>'
-        f'<td class="number">{item.drawdown_from_60d_high:.2%}</td></tr>'
+        f'<td class="number">{item.return_60d:.2%}</td>'
+        f'<td class="align-status positive">多头</td>'
+        f'<td class="number entry-score">{item.entry_score:.2f}</td></tr>'
         for index, item in enumerate(report.entry_candidates, 1)
     ) or '<tr><td colspan="10" class="empty">没有股票通过当前介入条件</td></tr>'
     counts = "".join(
@@ -173,8 +174,8 @@ def render_html(report: StockAdviceReport) -> str:
   </div>
   <main>
     <section>
-      <div class="section-head"><div class="section-title"><span class="section-index">01</span><h2>适合当前介入的趋势候选</h2></div><span class="section-note">最多{report.entry_candidate_limit}只 · 本次{len(report.entry_candidates)}只 · 均线多头、相对强弱为正，并限制短期涨幅、距MA20、ATR及距60日高点回撤</span></div>
-      <div class="table-wrap"><table><colgroup><col style="width:5%"><col style="width:19%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:10%"></colgroup><thead><tr><th>#</th><th>股票</th><th>现价</th><th>入场分</th><th>距MA20</th><th>20日</th><th>60日超额</th><th>R²</th><th>ATR</th><th>距60日高点</th></tr></thead><tbody>{entry_rows}</tbody></table></div>
+      <div class="section-head"><div class="section-title"><span class="section-index">01</span><h2>适合当前介入的趋势候选（同花顺条件）</h2></div><span class="section-note">最多{report.entry_candidate_limit}只 · 本次{len(report.entry_candidates)}只 · 5至55元、今日涨1%至10%、成交额3亿以上、换手3%至15%、20日涨10%以上、60日涨20%以上且均线多头</span></div>
+      <div class="table-wrap"><table><colgroup><col style="width:5%"><col style="width:19%"><col style="width:8%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:12%"></colgroup><thead><tr><th>#</th><th>股票</th><th>现价</th><th>今日涨幅</th><th>成交额</th><th>换手率</th><th>20日</th><th>60日</th><th>均线</th><th>入场分</th></tr></thead><tbody>{entry_rows}</tbody></table></div>
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">02</span><h2>高动量排名</h2></div><span class="section-note">最多{report.momentum_limit}只 · 本次{len(report.rankings)}只 · 仅收录达到动量分门槛的标的，不等同于当前介入优先级</span></div>
@@ -186,7 +187,7 @@ def render_html(report: StockAdviceReport) -> str:
     </section>
     <section>
       <div class="section-head"><div class="section-title"><span class="section-index">04</span><h2>人工复核检查</h2></div></div>
-      <ul class="checklist"><li>核对公告、停复牌、涨跌停和风险警示状态</li><li>确认股价仍低于100元且成交额满足策略门槛</li><li>关注短期涨幅过大、ATR偏高及深度回撤标的</li><li>结合所属行业与大盘环境判断趋势持续性</li><li>数据日期或价格异常时不采用本次排名</li><li>本报告仅提供关注排名，不生成买卖委托</li></ul>
+      <ul class="checklist"><li>核对公告、停复牌、涨跌停和风险警示状态</li><li>确认股价仍在5至55元且成交额不低于3亿元</li><li>确认今日涨幅和换手率仍处于策略区间</li><li>结合所属行业与大盘环境判断趋势持续性</li><li>数据日期或价格异常时不采用本次排名</li><li>本报告仅提供关注排名，不生成买卖委托</li></ul>
     </section>
     {f'<section class="notice"><div><span class="section-index">!</span><h2>风险提示</h2></div><ul>{warnings}</ul></section>' if warnings else ''}
   </main>

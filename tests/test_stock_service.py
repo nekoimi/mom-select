@@ -10,8 +10,11 @@ from mom_select.stock.service import _public_data_warnings
 
 def test_stock_service_marks_stale_history_as_failed(tmp_path, monkeypatch) -> None:
     universe = pd.DataFrame(
-        [["600001.XSHG", "样例", "沪深主板", 20.0, 1e8, "正常", "2026-08-13"]],
-        columns=["code", "name", "board", "price", "turnover", "trade_status", "quote_date"],
+        [["600001.XSHG", "样例", "沪深主板", 20.0, 0.03, 4e8, 0.05, "正常", "2026-08-13"]],
+        columns=[
+            "code", "name", "board", "price", "change_pct", "turnover",
+            "turnover_rate", "trade_status", "quote_date",
+        ],
     )
     stale = pd.DataFrame(
         {
@@ -65,7 +68,6 @@ def test_stock_service_marks_stale_history_as_failed(tmp_path, monkeypatch) -> N
             report_dir=tmp_path / "reports",
             strategy=StockStrategyConfig(
                 minimum_universe_size=1,
-                snapshot_minimum_turnover=0,
                 minimum_data_coverage=0,
             ),
         )

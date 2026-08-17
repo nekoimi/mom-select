@@ -15,17 +15,19 @@ class StockStrategyConfig:
     minimum_universe_size: int = 1000
     minimum_listing_days: int = 250
     liquidity_lookback: int = 20
-    minimum_average_turnover: float = 50_000_000
-    snapshot_minimum_turnover: float = 50_000_000
-    price_upper_bound_exclusive: float = 100.0
+    screen_minimum_turnover: float = 300_000_000
+    price_lower_bound_inclusive: float = 5.0
+    price_upper_bound_inclusive: float = 55.0
+    snapshot_minimum_change: float = 0.01
+    snapshot_maximum_change: float = 0.10
+    snapshot_minimum_turnover_rate: float = 0.03
+    snapshot_maximum_turnover_rate: float = 0.15
     minimum_data_coverage: float = 0.8
-    max_atr_ratio: float = 0.12
-    entry_max_distance_ma20: float = 0.18
-    entry_min_return_20d: float = -0.03
-    entry_max_return_20d: float = 0.40
-    entry_min_r_squared: float = 0.30
-    entry_max_atr_ratio: float = 0.10
-    entry_max_drawdown_from_60d_high: float = 0.18
+    entry_max_distance_ma20: float = 0.08
+    trend_minimum_return_20d: float = 0.10
+    trend_minimum_return_60d: float = 0.20
+    entry_max_return_20d: float = 0.20
+    entry_max_drawdown_from_60d_high: float = 0.12
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,8 @@ class StockSecurity:
     price: float
     turnover: float
     trade_status: str = "正常"
+    change_pct: float = 0.0
+    turnover_rate: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,15 @@ class StockMetrics:
     distance_ma20: float
     drawdown_from_60d_high: float
     entry_score: float
+    ma20_slope: float = 0.0
+    ma60_slope: float = 0.0
+    volume_ratio: float = 1.0
+    return_5d: float = 0.0
+    ma5_slope: float = 0.0
+    above_ma5: bool = True
+    change_pct: float = 0.0
+    turnover_rate: float = 0.0
+    snapshot_turnover: float = 0.0
 
 
 @dataclass

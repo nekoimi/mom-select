@@ -29,7 +29,7 @@ def calculate_stock_metrics(
         21,
     )
     clean = frame.sort_values("date").dropna(
-        subset=["open", "close", "high", "low", "turnover"]
+        subset=["open", "close", "high", "low", "volume", "turnover"]
     )
     benchmark_clean = benchmark.sort_values("date").dropna(subset=["close"])
     if len(clean) < required_rows:
@@ -40,7 +40,7 @@ def calculate_stock_metrics(
     closes = clean["close"].to_numpy(dtype=float)
     benchmark_closes = benchmark_clean["close"].to_numpy(dtype=float)
     returns = {window: _period_return(closes, window) for window in config.trend_windows}
-    for required in (20, 60, 120):
+    for required in (5, 20, 60, 120):
         if required not in returns:
             returns[required] = _period_return(closes, required)
     benchmark_20d = _period_return(benchmark_closes, 20)
@@ -63,9 +63,21 @@ def calculate_stock_metrics(
     running_max = np.maximum.accumulate(recent)
     max_drawdown = float(np.min(recent / running_max - 1))
     average_turnover = float(clean["turnover"].tail(config.liquidity_lookback).mean())
+    ma5 = float(np.mean(closes[-5:]))
     ma20 = float(np.mean(closes[-20:]))
     ma60 = float(np.mean(closes[-60:]))
     ma120 = float(np.mean(closes[-120:]))
+    ma5_previous = float(np.mean(closes[-8:-3]))
+    ma20_previous = float(np.mean(closes[-25:-5]))
+    ma60_previous = float(np.mean(closes[-65:-5]))
+    ma5_slope = float(ma5 / ma5_previous - 1) if ma5_previous > 0 else 0.0
+    ma20_slope = float(ma20 / ma20_previous - 1) if ma20_previous > 0 else 0.0
+    ma60_slope = float(ma60 / ma60_previous - 1) if ma60_previous > 0 else 0.0
+    volumes = clean["volume"].to_numpy(dtype=float)
+    recent_volume = float(np.mean(volumes[-5:]))
+    baseline_volume = float(np.mean(volumes[-25:-5]))
+    volume_ratio = recent_volume / baseline_volume if baseline_volume > 0 else 0.0
+    above_ma5 = bool(closes[-1] >= ma5)
     ma_aligned = bool(closes[-1] > ma20 > ma60 > ma120)
     distance_ma20 = float(closes[-1] / ma20 - 1)
     drawdown_from_60d_high = float(closes[-1] / np.max(closes[-60:]) - 1)
@@ -83,9 +95,14 @@ def calculate_stock_metrics(
     trend_quality = max(0.0, min(1.0, r_squared))
     relative_quality = max(0.0, min(1.0, relative_60d / 0.30))
     ma20_quality = max(0.0, 1 - abs(distance_ma20) / config.entry_max_distance_ma20)
-    high_quality = max(
-        0.0,
-        1 - abs(drawdown_from_60d_high) / config.entry_max_drawdown_from_60d_high,
+    # A fresh 60-day high is a valid trend signal but a poor default entry
+    # point. Give a modest pullback a higher entry quality while keeping the
+    # hard drawdown limit in ``select_entry_candidates``.
+    preferred_pullback = config.entry_max_drawdown_from_60d_high / 2
+    high_quality = (
+        min(1.0, abs(drawdown_from_60d_high) / preferred_pullback)
+        if preferred_pullback > 0
+        else 0.0
     )
     heat_quality = max(
         0.0,
@@ -116,6 +133,15 @@ def calculate_stock_metrics(
         distance_ma20=distance_ma20,
         drawdown_from_60d_high=drawdown_from_60d_high,
         entry_score=float(entry_score),
+        ma20_slope=ma20_slope,
+        ma60_slope=ma60_slope,
+        volume_ratio=volume_ratio,
+        return_5d=returns[5],
+        ma5_slope=ma5_slope,
+        above_ma5=above_ma5,
+        change_pct=security.change_pct,
+        turnover_rate=security.turnover_rate,
+        snapshot_turnover=security.turnover,
     )
 
 
@@ -126,13 +152,8 @@ def select_entry_candidates(
         item
         for item in rankings
         if item.ma_aligned
-        and item.relative_strength_20d > 0
-        and item.relative_strength_60d > 0
-        and config.entry_min_return_20d <= item.return_20d <= config.entry_max_return_20d
-        and 0 <= item.distance_ma20 <= config.entry_max_distance_ma20
-        and item.r_squared >= config.entry_min_r_squared
-        and item.atr_ratio <= config.entry_max_atr_ratio
-        and item.drawdown_from_60d_high >= -config.entry_max_drawdown_from_60d_high
+        and item.return_20d > config.trend_minimum_return_20d
+        and item.return_60d > config.trend_minimum_return_60d
     ]
     candidates.sort(key=lambda item: (-item.entry_score, -item.score, item.code))
     return candidates[: config.entry_candidate_results]
@@ -162,13 +183,8 @@ def rank_stocks(
             continue
         try:
             metric = calculate_stock_metrics(security, frame, benchmark, config)
-            if metric.average_turnover < config.minimum_average_turnover:
-                reason = "平均成交额不足"
-            elif metric.atr_ratio > config.max_atr_ratio:
-                reason = "ATR波动率过高"
-            else:
-                rankings.append(metric)
-                continue
+            rankings.append(metric)
+            continue
         except Exception as exc:
             detail = str(exc)
             reason = (

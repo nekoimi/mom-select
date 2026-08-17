@@ -28,8 +28,11 @@ def test_historical_stock_universe_uses_same_day_cache_while_online(
 ) -> None:
     provider = AkshareStockDataProvider(tmp_path)
     cached = pd.DataFrame(
-        [["600000.XSHG", "浦发银行", "沪深主板", 10.0, 1e8, "正常", "2020-08-13"]],
-        columns=["code", "name", "board", "price", "turnover", "trade_status", "quote_date"],
+        [["600000.XSHG", "浦发银行", "沪深主板", 10.0, 0.02, 4e8, 0.05, "正常", "2020-08-13"]],
+        columns=[
+            "code", "name", "board", "price", "change_pct", "turnover",
+            "turnover_rate", "trade_status", "quote_date",
+        ],
     )
     cached.to_csv(provider.universe_path, index=False)
     monkeypatch.setattr(
@@ -52,7 +55,10 @@ def test_historical_stock_universe_requires_same_day_cache_while_online(tmp_path
 
 def test_tencent_universe_normalizes_price_and_turnover_units() -> None:
     source = pd.DataFrame(
-        [{"code": "sh600000", "name": "浦发银行", "zxj": "1250", "turnover": "321.5", "state": ""}]
+        [{
+            "code": "sh600000", "name": "浦发银行", "zxj": "12.50",
+            "zdf": "2.5", "turnover": "32100", "hsl": "6.5", "state": "",
+        }]
     )
 
     result = AkshareStockDataProvider._normalize_universe(
@@ -60,8 +66,10 @@ def test_tencent_universe_normalizes_price_and_turnover_units() -> None:
     )
 
     assert result.loc[0, "code"] == "600000.XSHG"
-    assert result.loc[0, "price"] == 1250
-    assert result.loc[0, "turnover"] == 3_215_000
+    assert result.loc[0, "price"] == 12.5
+    assert result.loc[0, "change_pct"] == 0.025
+    assert result.loc[0, "turnover"] == 321_000_000
+    assert result.loc[0, "turnover_rate"] == 0.065
     assert result.loc[0, "trade_status"] == "正常"
 
 
@@ -74,7 +82,10 @@ def test_stock_universe_falls_back_from_tencent_to_eastmoney(tmp_path, monkeypat
         @staticmethod
         def stock_zh_a_spot_em():
             return pd.DataFrame(
-                [{"代码": "000001", "名称": "平安银行", "最新价": "10", "成交额": "100000000"}]
+                [{
+                    "代码": "000001", "名称": "平安银行", "最新价": "10",
+                    "涨跌幅": "3", "成交额": "400000000", "换手率": "5",
+                }]
             )
 
         @staticmethod

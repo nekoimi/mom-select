@@ -56,17 +56,19 @@ tasks:
       minimum_universe_size: 1000
       minimum_listing_days: 250
       liquidity_lookback: 20
-      minimum_average_turnover: 50000000
-      snapshot_minimum_turnover: 50000000
-      price_upper_bound_exclusive: 100
+      screen_minimum_turnover: 300000000
+      price_lower_bound_inclusive: 5
+      price_upper_bound_inclusive: 55
+      snapshot_minimum_change: 0.01
+      snapshot_maximum_change: 0.10
+      snapshot_minimum_turnover_rate: 0.03
+      snapshot_maximum_turnover_rate: 0.15
       minimum_data_coverage: 0.8
-      max_atr_ratio: 0.12
-      entry_max_distance_ma20: 0.18
-      entry_min_return_20d: -0.03
-      entry_max_return_20d: 0.40
-      entry_min_r_squared: 0.30
-      entry_max_atr_ratio: 0.10
-      entry_max_drawdown_from_60d_high: 0.18
+      entry_max_distance_ma20: 0.08
+      trend_minimum_return_20d: 0.10
+      trend_minimum_return_60d: 0.20
+      entry_max_return_20d: 0.20
+      entry_max_drawdown_from_60d_high: 0.12
 
 notifications:
   enabled: false
