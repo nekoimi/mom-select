@@ -125,6 +125,33 @@ def test_yahoo_history_maps_daily_bars(tmp_path: Path, monkeypatch) -> None:
     assert any("Yahoo备用日线" in warning for warning in provider.warnings)
 
 
+def test_yahoo_history_adjusts_ohlc_with_adjusted_close(tmp_path: Path, monkeypatch) -> None:
+    provider = EastmoneyDataProvider(tmp_path)
+    payload = {
+        "chart": {
+            "result": [{
+                "timestamp": [1786377600],
+                "indicators": {
+                    "quote": [{
+                        "open": [10.0], "close": [12.0], "high": [14.0],
+                        "low": [8.0], "volume": [1000],
+                    }],
+                    "adjclose": [{"adjclose": [6.0]}],
+                },
+            }]
+        }
+    }
+    monkeypatch.setattr(provider, "_request_json", lambda request: payload)
+
+    result = provider._fetch_yahoo(
+        "600000.XSHG", date(2026, 8, 10), date(2026, 8, 10)
+    )
+
+    assert result.iloc[0]["open"] == 5.0
+    assert result.iloc[0]["close"] == 6.0
+    assert result.iloc[0]["turnover"] == 5500.0
+
+
 def test_akshare_history_maps_etf_daily_bars(tmp_path: Path, monkeypatch) -> None:
     provider = EastmoneyDataProvider(tmp_path)
     source = pd.DataFrame(

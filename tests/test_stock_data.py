@@ -195,6 +195,49 @@ def test_stock_history_uses_bounded_tencent_fallback(tmp_path, monkeypatch) -> N
     assert any("已回退到腾讯" in warning for warning in provider.warnings)
 
 
+def test_stock_history_falls_back_to_adjusted_yahoo_after_tencent_failure(
+    tmp_path, monkeypatch
+) -> None:
+    class FakeAkshare:
+        @staticmethod
+        def stock_zh_a_hist(**kwargs):
+            raise TimeoutError("eastmoney timeout")
+
+    provider = AkshareStockDataProvider(tmp_path)
+    monkeypatch.setattr(provider, "_akshare", lambda: FakeAkshare)
+    monkeypatch.setattr(
+        provider._bounded_history_provider,
+        "tencent_qfq_history",
+        lambda *args: (_ for _ in ()).throw(DataProviderError("HTTP Error 403: Forbidden")),
+    )
+    monkeypatch.setattr(
+        provider._bounded_history_provider,
+        "yahoo_qfq_history",
+        lambda *args: pd.DataFrame([{
+            "date": pd.Timestamp("2026-08-13"), "open": 9.1, "close": 9.2,
+            "high": 9.3, "low": 9.0, "volume": 10_000_000,
+            "turnover": 92_000_000,
+        }]),
+    )
+
+    result = provider.history("600000.XSHG", date(2026, 8, 1), date(2026, 8, 13))
+
+    assert result.loc[0, "close"] == 9.2
+    assert any("已回退到Yahoo" in warning for warning in provider.warnings)
+
+
+def test_eastmoney_circuit_opens_after_consecutive_failures(tmp_path) -> None:
+    provider = AkshareStockDataProvider(tmp_path)
+
+    provider._record_eastmoney_result(False)
+    provider._record_eastmoney_result(False)
+    assert provider._eastmoney_is_enabled()
+    provider._record_eastmoney_result(False)
+
+    assert not provider._eastmoney_is_enabled()
+    assert "东方财富个股日线连续失败，本次剩余股票跳过该源" in provider.warnings
+
+
 def test_stock_history_does_not_refetch_short_cache_covering_end(tmp_path, monkeypatch) -> None:
     provider = AkshareStockDataProvider(tmp_path)
     cached = pd.DataFrame(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -89,6 +90,9 @@ class EastmoneyDataProvider:
 
     endpoint = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
     fallback_endpoint = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    alternate_fallback_endpoint = (
+        "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
+    )
     yahoo_endpoint = "https://query1.finance.yahoo.com/v8/finance/chart"
     snapshot_endpoint = "https://push2.eastmoney.com/api/qt/stock/get"
     batch_snapshot_endpoint = "https://push2.eastmoney.com/api/qt/ulist.np/get"
@@ -112,6 +116,8 @@ class EastmoneyDataProvider:
         self._etf_universe_path = self.cache_dir / "_etf_universe.csv"
         self._names: dict[str, str] = {}
         self.warnings: set[str] = set()
+        self._tencent_endpoint_lock = threading.Lock()
+        self._tencent_endpoint_index = 0
         self._load_metadata()
 
     def _load_metadata(self) -> None:
@@ -171,6 +177,18 @@ class EastmoneyDataProvider:
             try:
                 with urlopen(request, timeout=15) as response:
                     return json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 < self.retries:
+                    time.sleep(0.4 * (2**attempt))
+        raise DataProviderError(f"行情请求失败（重试{self.retries}次）: {last_error}") from last_error
+
+    def _request_text(self, request: Request) -> str:
+        last_error: Exception | None = None
+        for attempt in range(self.retries):
+            try:
+                with urlopen(request, timeout=15) as response:
+                    return response.read().decode("utf-8")
             except Exception as exc:
                 last_error = exc
                 if attempt + 1 < self.retries:
@@ -390,9 +408,84 @@ class EastmoneyDataProvider:
         self.warnings.add("部分行情使用腾讯备用日线，成交额为OHLC均价乘成交量的估算值")
         return frame[PRICE_COLUMNS].dropna().sort_values("date")
 
+    def _fetch_alternate_tencent(
+        self, code: str, start: date, end: date
+    ) -> pd.DataFrame:
+        symbol = self._symbol(code)
+        query = urlencode(
+            {
+                "_var": f"kline_dayqfq{end.year}",
+                "param": (
+                    f"{symbol},day,{start.isoformat()},{end.isoformat()},1000,qfq"
+                ),
+                "r": "0.8205512681390605",
+            }
+        )
+        request = Request(
+            f"{self.alternate_fallback_endpoint}?{query}",
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://gu.qq.com/"},
+        )
+        response_text = self._request_text(request)
+        json_start = response_text.find("{")
+        if json_start < 0:
+            raise DataProviderError("腾讯备用域名未返回有效数据")
+        try:
+            payload = json.loads(response_text[json_start:])
+        except json.JSONDecodeError as exc:
+            raise DataProviderError("腾讯备用域名返回数据无法解析") from exc
+        security_data = payload.get("data", {}).get(symbol, {})
+        raw_rows = security_data.get("qfqday") or security_data.get("day")
+        if not raw_rows:
+            raise DataProviderError("腾讯备用域名未返回K线")
+        rows = []
+        for values in raw_rows:
+            try:
+                open_price = float(values[1])
+                close = float(values[2])
+                high = float(values[3])
+                low = float(values[4])
+                volume = float(values[5]) * 100
+            except (IndexError, TypeError, ValueError):
+                continue
+            typical_price = (open_price + close + high + low) / 4
+            rows.append(
+                {
+                    "date": values[0],
+                    "open": open_price,
+                    "close": close,
+                    "high": high,
+                    "low": low,
+                    "volume": volume,
+                    "turnover": typical_price * volume,
+                }
+            )
+        frame = pd.DataFrame(rows, columns=PRICE_COLUMNS)
+        if frame.empty:
+            raise DataProviderError("腾讯备用域名未返回有效K线")
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        frame = frame.loc[
+            (frame["date"].dt.date >= start) & (frame["date"].dt.date <= end)
+        ]
+        self.warnings.add("部分行情使用腾讯备用日线，成交额为OHLC均价乘成交量的估算值")
+        return frame[PRICE_COLUMNS].dropna().sort_values("date")
+
     def tencent_qfq_history(self, code: str, start: date, end: date) -> pd.DataFrame:
-        """Fetch Tencent qfq bars through the provider's bounded HTTP client."""
-        return self._fetch_tencent(code, start, end)
+        """Fetch Tencent qfq bars, distributing load over its two public hosts."""
+        with self._tencent_endpoint_lock:
+            prefer_alternate = self._tencent_endpoint_index % 2 == 1
+            self._tencent_endpoint_index += 1
+        fetches = (
+            (self._fetch_alternate_tencent, self._fetch_tencent)
+            if prefer_alternate
+            else (self._fetch_tencent, self._fetch_alternate_tencent)
+        )
+        errors = []
+        for fetch in fetches:
+            try:
+                return fetch(code, start, end)
+            except Exception as exc:
+                errors.append(str(exc))
+        raise DataProviderError("腾讯两个行情域名均失败: " + "; ".join(errors))
 
     def _fetch_yahoo(self, code: str, start: date, end: date) -> pd.DataFrame:
         """Fetch daily bars from Yahoo Finance as a last-resort public source."""
@@ -420,6 +513,10 @@ class EastmoneyDataProvider:
             raise DataProviderError("Yahoo行情接口未返回K线")
         timestamps = result.get("timestamp") or []
         quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        adjusted_close = (
+            ((result.get("indicators") or {}).get("adjclose") or [{}])[0].get("adjclose")
+            or []
+        )
         rows = []
         for index, timestamp in enumerate(timestamps):
             try:
@@ -430,14 +527,23 @@ class EastmoneyDataProvider:
                 volume = quote["volume"][index]
                 if any(value is None for value in (open_price, close, high, low, volume)):
                     continue
-                typical_price = (float(open_price) + float(close) + float(high) + float(low)) / 4
+                factor = 1.0
+                if index < len(adjusted_close) and adjusted_close[index] is not None:
+                    raw_close = float(close)
+                    if raw_close:
+                        factor = float(adjusted_close[index]) / raw_close
+                open_price = float(open_price) * factor
+                close = float(close) * factor
+                high = float(high) * factor
+                low = float(low) * factor
+                typical_price = (open_price + close + high + low) / 4
                 rows.append(
                     {
                         "date": pd.to_datetime(int(timestamp), unit="s").normalize(),
-                        "open": float(open_price),
-                        "close": float(close),
-                        "high": float(high),
-                        "low": float(low),
+                        "open": open_price,
+                        "close": close,
+                        "high": high,
+                        "low": low,
                         "volume": float(volume),
                         "turnover": typical_price * float(volume),
                     }
@@ -448,6 +554,10 @@ class EastmoneyDataProvider:
             raise DataProviderError("Yahoo行情接口未返回有效K线")
         self.warnings.add("部分行情使用Yahoo备用日线，成交额为OHLC均价乘成交量的估算值")
         return pd.DataFrame(rows, columns=PRICE_COLUMNS).sort_values("date")
+
+    def yahoo_qfq_history(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """Fetch Yahoo bars adjusted to the same qfq price basis as other sources."""
+        return self._fetch_yahoo(code, start, end)
 
     def _fetch_akshare(self, code: str, start: date, end: date) -> pd.DataFrame:
         """Fetch adjusted ETF daily bars through the optional AKShare adapter."""

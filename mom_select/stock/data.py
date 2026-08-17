@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -15,6 +16,39 @@ from mom_select.data import DataProviderError, EastmoneyDataProvider, PRICE_COLU
 
 LOG = logging.getLogger("mom-select.stock.data")
 UNIVERSE_COLUMNS = ["code", "name", "board", "price", "turnover", "trade_status", "quote_date"]
+
+
+class _RequestGate:
+    """Reserve globally spaced request slots across all history worker threads."""
+
+    def __init__(self, interval: float):
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._next_request = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            request_at = max(now, self._next_request)
+            self._next_request = request_at + self.interval
+        delay = request_at - now
+        if delay > 0:
+            time.sleep(delay)
+
+    def cool_down(self, seconds: float) -> None:
+        with self._lock:
+            self._next_request = max(self._next_request, time.monotonic() + seconds)
+
+
+def _is_http_403(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "code", None) == 403 or "HTTP Error 403" in str(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _exchange_code(raw_code: str) -> str | None:
@@ -55,7 +89,33 @@ class AkshareStockDataProvider:
         self._bounded_history_provider = EastmoneyDataProvider(
             self.cache_dir, workers=1, retries=1
         )
+        # A full first run can contain several thousand symbols. These gates
+        # apply across worker threads so public endpoints see a steady request
+        # rate instead of bursts of ``workers`` concurrent requests.
+        self._eastmoney_gate = _RequestGate(0.05)
+        self._tencent_gate = _RequestGate(0.20)
+        self._yahoo_gate = _RequestGate(0.30)
+        self._source_state_lock = threading.Lock()
+        self._eastmoney_consecutive_failures = 0
+        self._eastmoney_disabled = False
         self.warnings: list[str] = []
+
+    def _eastmoney_is_enabled(self) -> bool:
+        with self._source_state_lock:
+            return not self._eastmoney_disabled
+
+    def _record_eastmoney_result(self, succeeded: bool) -> None:
+        warning = None
+        with self._source_state_lock:
+            if succeeded:
+                self._eastmoney_consecutive_failures = 0
+                return
+            self._eastmoney_consecutive_failures += 1
+            if self._eastmoney_consecutive_failures >= 3 and not self._eastmoney_disabled:
+                self._eastmoney_disabled = True
+                warning = "东方财富个股日线连续失败，本次剩余股票跳过该源"
+        if warning:
+            self.warnings.append(warning)
 
     @staticmethod
     def _akshare():
@@ -274,27 +334,46 @@ class AkshareStockDataProvider:
             fetch_start = cached["date"].max().date() + timedelta(days=1)
         errors: list[str] = []
         frame = pd.DataFrame(columns=PRICE_COLUMNS)
-        try:
-            source = self._akshare().stock_zh_a_hist(
-                symbol=raw_code,
-                period="daily",
-                start_date=fetch_start.strftime("%Y%m%d"),
-                end_date=end.strftime("%Y%m%d"),
-                adjust="qfq",
-                timeout=15,
-            )
-            frame = self._normalize_history(source, "东方财富")
-        except Exception as exc:
-            errors.append(f"东方财富: {exc}")
+        if self._eastmoney_is_enabled():
+            try:
+                self._eastmoney_gate.wait()
+                source = self._akshare().stock_zh_a_hist(
+                    symbol=raw_code,
+                    period="daily",
+                    start_date=fetch_start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"),
+                    adjust="qfq",
+                    timeout=15,
+                )
+                frame = self._normalize_history(source, "东方财富")
+                self._record_eastmoney_result(not frame.empty)
+            except Exception as exc:
+                self._record_eastmoney_result(False)
+                errors.append(f"东方财富: {exc}")
+        else:
+            errors.append("东方财富: 本次运行已熔断")
         if frame.empty and not code.endswith(".XBSE"):
             try:
+                self._tencent_gate.wait()
                 frame = self._bounded_history_provider.tencent_qfq_history(
                     code, fetch_start, end
                 )
                 if errors:
                     self.warnings.append(f"{code}前复权日线已回退到腾讯")
             except Exception as exc:
+                if _is_http_403(exc):
+                    self._tencent_gate.cool_down(30.0)
                 errors.append(f"腾讯: {exc}")
+        if frame.empty and code.endswith((".XSHG", ".XSHE")):
+            try:
+                self._yahoo_gate.wait()
+                frame = self._bounded_history_provider.yahoo_qfq_history(
+                    code, fetch_start, end
+                )
+                if errors:
+                    self.warnings.append(f"{code}前复权日线已回退到Yahoo")
+            except Exception as exc:
+                errors.append(f"Yahoo: {exc}")
         if frame.empty and errors:
             detail = "; ".join(errors)
             if not cached.empty:
@@ -321,7 +400,6 @@ class AkshareStockDataProvider:
         failures: dict[str, str] = {}
 
         def load(code: str) -> pd.DataFrame:
-            time.sleep(0.02)
             return self.history(code, start, end)
 
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
@@ -337,4 +415,7 @@ class AkshareStockDataProvider:
                 except Exception as exc:
                     LOG.error("个股行情获取失败: code=%s", code, exc_info=exc)
                     failures[code] = str(exc)
+        for diagnostic in sorted(self._bounded_history_provider.warnings):
+            if diagnostic not in self.warnings:
+                self.warnings.append(diagnostic)
         return histories, failures
